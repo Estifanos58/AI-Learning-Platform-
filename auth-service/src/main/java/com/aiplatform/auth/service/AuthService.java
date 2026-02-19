@@ -155,7 +155,7 @@ public class AuthService {
                 .user(user)
                 .tokenHash(newRefreshTokenHash)
                 .issuedAt(LocalDateTime.now())
-                .expiresAt(LocalDateTime.now().plusNanos(tokenService.getRefreshTokenExpiration() * 1_000_000L))
+                .expiresAt(LocalDateTime.now().plus(java.time.Duration.ofMillis(tokenService.getRefreshTokenExpiration())))
                 .revoked(false)
                 .build();
         refreshTokenRepository.save(newRefreshToken);
@@ -235,7 +235,7 @@ public class AuthService {
                 .user(user)
                 .tokenHash(hashUtil.hashSHA256(rawRefreshToken))
                 .issuedAt(LocalDateTime.now())
-                .expiresAt(LocalDateTime.now().plusNanos(tokenService.getRefreshTokenExpiration() * 1_000_000L))
+                .expiresAt(LocalDateTime.now().plus(java.time.Duration.ofMillis(tokenService.getRefreshTokenExpiration())))
                 .revoked(false)
                 .ipAddress(ipAddress)
                 .userAgent(userAgent)
