@@ -1,0 +1,60 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: auth-rate-limited
+          uri: forward:/
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@clientRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+            - RewritePath=/api/auth/?(?<segment>.*), /api/internal/auth/${segment}
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: ${GATEWAY_ALLOWED_ORIGINS:http://localhost:3000}
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - Content-Type
+              - Authorization
+              - X-Correlation-ID
+            allowCredentials: true
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:redis}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+grpc:
+  client:
+    auth-service:
+      address: ${GRPC_AUTH_ADDRESS:static://auth-service:9090}
+      negotiationType: ${GRPC_AUTH_NEGOTIATION:PLAINTEXT}
+
+app:
+  jwt:
+    issuer: ${APP_JWT_ISSUER:ai-learning-platform-auth}
+    public-key-location: ${APP_JWT_PUBLIC_KEY_LOCATION:classpath:keys/public_key.pem}
+  grpc:
+    auth:
+      service-secret: ${APP_GRPC_AUTH_SERVICE_SECRET:change-me-shared-secret}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
