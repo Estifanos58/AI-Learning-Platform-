@@ -22,7 +22,7 @@
         <spring-cloud.version>2024.0.0</spring-cloud.version>
         <grpc.spring.boot.version>3.1.0.RELEASE</grpc.spring.boot.version>
         <protobuf.version>3.25.5</protobuf.version>
-        <grpc.version>1.69.0</grpc.version>
+    <grpc.version>1.63.0</grpc.version>
         <jjwt.version>0.12.6</jjwt.version>
     </properties>
 
@@ -69,6 +69,11 @@
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-protobuf</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty</artifactId>
             <version>${grpc.version}</version>
         </dependency>
         <dependency>
