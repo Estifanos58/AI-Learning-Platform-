@@ -1,6 +1,10 @@
 server:
   port: ${SERVER_PORT:8080}
 
+grpc:
+  server:
+    port: ${GRPC_SERVER_PORT:9090}
+
 spring:
   application:
     name: auth-service
@@ -45,6 +49,9 @@ springdoc:
     path: /swagger-ui.html
 
 app:
+  grpc:
+    auth:
+      service-secret: ${APP_GRPC_AUTH_SERVICE_SECRET:change-me-shared-secret}
   jwt:
     issuer: ${APP_JWT_ISSUER:ai-learning-platform-auth}
     audience: ${APP_JWT_AUDIENCE:ai-learning-platform-clients}
