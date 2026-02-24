@@ -37,7 +37,6 @@ com/aiplatform/auth/proto/RefreshRequest$Builder.class
 com/aiplatform/gateway/security/SecurityConfig.class
 com/aiplatform/gateway/dto/RefreshRequest.class
 com/aiplatform/auth/proto/AuthServiceGrpc$1.class
-com/aiplatform/gateway/config/GrpcClientConfig.class
 com/aiplatform/auth/proto/UserSummaryOrBuilder.class
 com/aiplatform/gateway/config/GatewayJwtProperties.class
 com/aiplatform/auth/proto/RefreshRequest$1.class

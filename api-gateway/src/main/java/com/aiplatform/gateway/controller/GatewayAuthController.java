@@ -19,6 +19,7 @@ import io.grpc.stub.MetadataUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -37,7 +38,8 @@ public class GatewayAuthController {
     private static final Metadata.Key<String> CORRELATION_ID_KEY = Metadata.Key.of("x-correlation-id", Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> SERVICE_SECRET_KEY = Metadata.Key.of("x-service-secret", Metadata.ASCII_STRING_MARSHALLER);
 
-    private final AuthServiceGrpc.AuthServiceBlockingStub authStub;
+    @GrpcClient("auth-service")
+    private AuthServiceGrpc.AuthServiceBlockingStub authStub;
     private final GrpcAuthProperties grpcAuthProperties;
 
     @PostMapping("/signup")

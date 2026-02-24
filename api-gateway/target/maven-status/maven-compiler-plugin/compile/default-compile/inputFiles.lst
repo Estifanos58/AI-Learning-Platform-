@@ -1,7 +1,6 @@
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/ApiGatewayApplication.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/config/GatewayJwtProperties.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/config/GrpcAuthProperties.java
-/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/config/GrpcClientConfig.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/config/RateLimitConfig.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/controller/GatewayAuthController.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/dto/ApiMessageResponse.java
