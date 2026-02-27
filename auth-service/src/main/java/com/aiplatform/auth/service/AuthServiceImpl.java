@@ -163,14 +163,11 @@ public class AuthServiceImpl implements AuthService {
 
         if (Boolean.TRUE.equals(currentToken.getRevoked())) {
 
-            log.info("REfresh token used again = {}", currentToken.getReplacedBy());
-
             UUID replacedBy =  currentToken.getReplacedBy();
 
             RefreshToken newRefToken = refreshTokenRepository.findById(replacedBy).orElseThrow(() ->
                     new ApiException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
 
-            log.info("WE HAVE FOUND it, {}", newRefToken.getId());
             newRefToken.setRevoked(Boolean.TRUE);
             newRefToken.setRevokedAt(LocalDateTime.now());
             refreshTokenRepository.save(newRefToken);

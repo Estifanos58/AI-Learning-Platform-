@@ -68,6 +68,7 @@ public class GatewayProfileController {
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
             @RequestHeader(value = "X-Correlation-ID", required = false) String correlationHeader
     ) {
+        log.info("Getting user information, ={}", authorization);
         return Mono.fromCallable(() -> {
                     GatewayPrincipal principal = resolvePrincipal(authorization, correlationHeader);
                     var response = withMetadata(principal).getMyProfile(GetMyProfileRequest.newBuilder().build());
@@ -118,8 +119,8 @@ public class GatewayProfileController {
                     if (request.bio() != null) {
                         grpcRequest.setBio(request.bio());
                     }
-                    if (request.avatarUrl() != null) {
-                        grpcRequest.setAvatarUrl(request.avatarUrl());
+                    if (request.profileImageFileId() != null) {
+                        grpcRequest.setProfileImageFileId(request.profileImageFileId());
                     }
 
                     var response = withMetadata(principal).updateMyProfile(grpcRequest.build());
@@ -251,7 +252,7 @@ public class GatewayProfileController {
                 response.getUniversityId(),
                 response.getDepartment(),
                 response.getBio(),
-                response.getAvatarUrl(),
+                response.getProfileImageFileId(),
                 response.getVisibility(),
                 response.getReputationScore(),
                 response.getCompletionScore(),

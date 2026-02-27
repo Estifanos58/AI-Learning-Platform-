@@ -9,7 +9,7 @@ public record UserProfileResponse(
         String universityId,
         String department,
         String bio,
-        String avatarUrl,
+        String profileImageFileId,
         ProfileVisibility visibility,
         int reputationScore,
         int completionScore,

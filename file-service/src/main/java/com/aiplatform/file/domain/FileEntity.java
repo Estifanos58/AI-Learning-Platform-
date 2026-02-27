@@ -1,4 +1,4 @@
-package com.aiplatform.profile.domain;
+package com.aiplatform.file.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -18,47 +18,47 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "user_profiles")
+@Table(name = "files")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UserProfile {
+public class FileEntity {
 
     @Id
-    @Column(name = "user_id", nullable = false, updatable = false)
-    private UUID userId;
+    @Column(nullable = false, updatable = false)
+    private UUID id;
 
-    @Column(name = "first_name", length = 100)
-    private String firstName;
-
-    @Column(name = "last_name", length = 100)
-    private String lastName;
-
-    @Column(name = "university_id", length = 50)
-    private String universityId;
-
-    @Column(length = 100)
-    private String department;
-
-    @Column(columnDefinition = "TEXT")
-    private String bio;
-
-    @Column(name = "profile_image_file_id")
-    private UUID profileImageFileId;
+    @Column(name = "owner_id", nullable = false, updatable = false)
+    private UUID ownerId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "profile_visibility", nullable = false, length = 20)
-    private ProfileVisibility profileVisibility;
+    @Column(name = "file_type", nullable = false, length = 20)
+    private FileType fileType;
 
-    @Column(name = "reputation_score", nullable = false)
-    private Integer reputationScore;
+    @Column(name = "original_name", nullable = false, length = 255)
+    private String originalName;
+
+    @Column(name = "stored_name", nullable = false, length = 255)
+    private String storedName;
+
+    @Column(name = "content_type", length = 100)
+    private String contentType;
+
+    @Column(name = "file_size", nullable = false)
+    private Long fileSize;
+
+    @Column(name = "storage_path", nullable = false, columnDefinition = "TEXT")
+    private String storagePath;
+
+    @Column(name = "is_shareable", nullable = false)
+    private Boolean isShareable;
 
     @Column(name = "deleted", nullable = false)
     private Boolean deleted;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
@@ -71,11 +71,8 @@ public class UserProfile {
             createdAt = now;
         }
         updatedAt = now;
-        if (profileVisibility == null) {
-            profileVisibility = ProfileVisibility.PUBLIC;
-        }
-        if (reputationScore == null) {
-            reputationScore = 0;
+        if (isShareable == null) {
+            isShareable = Boolean.FALSE;
         }
         if (deleted == null) {
             deleted = Boolean.FALSE;

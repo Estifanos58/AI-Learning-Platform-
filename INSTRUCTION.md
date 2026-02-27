@@ -1,360 +1,346 @@
 Objective
 
-Create a production-ready User Profile Service responsible for:
+Create a production-ready File Service responsible for:
 
-Managing user profile data
+Storing and managing user files
 
-Consuming UserRegistered events from Kafka
+Separating profile images from general user files
 
-Automatically creating default profiles for new users
+Managing file metadata
 
-Exposing gRPC endpoints for profile operations
+Supporting file sharing between users
 
-Supporting search and profile visibility rules
+Exposing file operations via gRPC
 
-Maintaining strong service boundaries (no direct DB coupling with auth-service)
+Publishing domain events when necessary
 
-This service must follow event-driven architecture principles and integrate with:
+Storing files locally inside Docker-managed storage
 
-auth-service (via Kafka events)
+Serving file paths (NOT raw file streaming to other services)
 
-api-gateway (via gRPC)
+Allowing full internal DB access for RAG service (read-only recommended)
 
-Kafka (as message broker)
+This service must integrate with:
 
-SQL database (PostgreSQL preferred)
+auth-service (JWT validated at API Gateway)
+
+user-profile-service (stores profile image reference)
+
+RAG service (reads file paths + direct DB access for embedding)
+
+api-gateway (gRPC only)
+
+Kafka (for file events)
 
 1. Project Metadata
 
-Project Name: user-profile-service
+Project Name: file-service
 Build Tool: Maven
 Language: Java 21
 Framework: Spring Boot 3.x
+
 Communication:
 
 gRPC (Server)
 
-Kafka (Consumer)
+Kafka (Producer optional for file events)
 
-SQL (JPA/Hibernate)
+SQL Database (PostgreSQL for metadata)
+
+Local File Storage (Docker volume)
 
 2. Architectural Role
 
-The User Profile Service:
+The File Service:
 
-Owns profile data
+Owns file metadata
+
+Owns physical file storage
 
 Does NOT authenticate users
 
-Does NOT manage credentials
+Trusts user identity from API Gateway metadata
 
-Reacts to domain events from Auth Service
+Returns file path, not file content to other services
 
-Exposes profile operations via gRPC only
+Enforces file ownership rules
 
-High-Level Flow
+Enforces sharing rules
 
-User signs up via API Gateway
+3. Storage Strategy (Critical Design Decision)
 
-Gateway → Auth Service (gRPC)
+We must separate:
 
-Auth Service:
+A) Metadata Database
 
-Creates User
+Use: PostgreSQL
 
-Publishes UserRegisteredEvent to Kafka
+Reason:
 
-User Profile Service:
+Strong relational modeling
 
-Consumes event
+Sharing rules require relational joins
 
-Creates default profile
+Reliable indexing
 
-Clients fetch/update profile via:
-REST → API Gateway → gRPC → User Profile Service
+Mature production support
 
-3. Technology Stack & Dependencies
-Core Dependencies
+B) File Binary Storage
 
-spring-boot-starter-data-jpa
+Use:
 
-spring-boot-starter-validation
+Local filesystem inside Docker container
 
-spring-kafka
+Mounted volume: /data/files
 
-grpc-server-spring-boot-starter
+Reason:
 
-protobuf-java
+Storing large binaries inside PostgreSQL (BYTEA) is inefficient
 
-postgresql (or mysql)
+Filesystem storage is faster for large objects
 
-lombok
+Enables direct path access by RAG service
 
-mapstruct (for DTO mapping)
+Cleaner separation of concerns
 
-4. Database Design
-Table: user_profiles
-CREATE TABLE user_profiles (
-    user_id UUID PRIMARY KEY,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    university_id VARCHAR(50),
-    department VARCHAR(100),
-    bio TEXT,
-    avatar_url TEXT,
-    profile_visibility VARCHAR(20) DEFAULT 'PUBLIC',
-    reputation_score INTEGER DEFAULT 0,
+4. Storage Structure
+
+Inside container:
+
+/data
+   /profile-images
+   /user-files
+
+Example:
+
+/data/profile-images/{userId}/{filename}
+/data/user-files/{userId}/{fileId}.{ext}
+
+RAG service will receive:
+
+fileId
+
+absolutePath
+
+It must not download from HTTP.
+It reads directly from mounted shared volume.
+
+5. Database Design
+Table: files
+CREATE TABLE files (
+    id UUID PRIMARY KEY,
+    owner_id UUID NOT NULL,
+    file_type VARCHAR(20) NOT NULL, -- PROFILE_IMAGE, DOCUMENT
+    original_name VARCHAR(255) NOT NULL,
+    stored_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100),
+    file_size BIGINT NOT NULL,
+    storage_path TEXT NOT NULL,
+    is_shareable BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+    updated_at TIMESTAMP NOT NULL,
+    deleted BOOLEAN DEFAULT FALSE
 );
+
+Indexes:
+
+CREATE INDEX idx_files_owner ON files(owner_id);
+CREATE INDEX idx_files_type ON files(file_type);
+Table: file_shares
+CREATE TABLE file_shares (
+    id UUID PRIMARY KEY,
+    file_id UUID NOT NULL,
+    shared_with_user_id UUID NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    UNIQUE(file_id, shared_with_user_id)
+);
+
+Indexes:
+
+CREATE INDEX idx_shared_user ON file_shares(shared_with_user_id);
+
 Important:
 
-DO NOT use foreign key to auth-service database.
+No foreign key to user-profile DB
 
-Services must remain database-isolated.
+Only store UUID references
 
-Only store user_id as UUID.
-
-5. Updated Domain Model
-
-Enhance your current model:
-
+6. Domain Model
 @Entity
-@Table(name = "user_profiles")
-public class UserProfile {
+@Table(name = "files")
+public class FileEntity {
 
     @Id
-    private UUID userId;
+    private UUID id;
 
-    private String firstName;
-    private String lastName;
-    private String universityId;
-    private String department;
-
-    @Column(columnDefinition = "TEXT")
-    private String bio;
-
-    private String avatarUrl;
+    private UUID ownerId;
 
     @Enumerated(EnumType.STRING)
-    private ProfileVisibility profileVisibility; // PUBLIC, UNIVERSITY_ONLY, PRIVATE
+    private FileType fileType; // PROFILE_IMAGE, DOCUMENT
 
-    private Integer reputationScore;
+    private String originalName;
+    private String storedName;
+    private String contentType;
+
+    private Long fileSize;
+
+    @Column(columnDefinition = "TEXT")
+    private String storagePath;
+
+    private Boolean isShareable;
+
+    private Boolean deleted;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
-Enum
-public enum ProfileVisibility {
-    PUBLIC,
-    UNIVERSITY_ONLY,
-    PRIVATE
+
+Enum:
+
+public enum FileType {
+    PROFILE_IMAGE,
+    DOCUMENT
 }
-6. Kafka Integration
-Topic
+7. gRPC Definition (file.proto)
 
-user.registered.v1
+Service Name: FileService
 
-Event Schema (JSON)
+Required RPCs
+UploadFile(UploadFileRequest) returns (FileResponse)
+GetFileMetadata(GetFileRequest) returns (FileResponse)
+DeleteFile(DeleteFileRequest) returns (SimpleResponse)
+ShareFile(ShareFileRequest) returns (SimpleResponse)
+UnshareFile(UnshareFileRequest) returns (SimpleResponse)
+UpdateFileMetadata(UpdateFileMetadataRequest) returns (FileResponse)
+ListMyFiles(ListMyFilesRequest) returns (ListFilesResponse)
+ListSharedWithMe(ListSharedWithMeRequest) returns (ListFilesResponse)
+GetFilePath(GetFilePathRequest) returns (FilePathResponse)
+8. Security Model
 
-Auth Service must publish:
+JWT validated at API Gateway.
 
-{
-  "eventId": "uuid",
-  "eventType": "USER_REGISTERED",
-  "userId": "uuid",
-  "email": "string",
-  "universityId": "string",
-  "timestamp": "2026-02-25T10:15:30"
-}
-Kafka Consumer Requirements
-
-Group ID: user-profile-service
-
-Manual acknowledgment
-
-Idempotent processing
-
-Retry mechanism
-
-Dead Letter Topic: user.registered.dlt
-
-Consumer Logic
-
-When USER_REGISTERED event is received:
-
-Check if profile exists (idempotency check)
-
-If not exists:
-
-Create profile with:
-
-profileVisibility = PUBLIC
-
-reputationScore = 0
-
-firstName/lastName = null
-
-bio = empty
-
-Save to DB
-
-Log correlationId if present
-
-7. gRPC Definition (profile.proto)
-
-This is the source of truth.
-
-Service Name: UserProfileService
-
-RPCs Required
-GetMyProfile(GetMyProfileRequest) returns (UserProfileResponse)
-GetProfileById(GetProfileRequest) returns (UserProfileResponse)
-UpdateMyProfile(UpdateProfileRequest) returns (UserProfileResponse)
-SearchProfiles(SearchProfilesRequest) returns (SearchProfilesResponse)
-UpdateProfileVisibility(UpdateVisibilityRequest) returns (SimpleResponse)
-IncrementReputation(IncrementReputationRequest) returns (SimpleResponse)
-Security Model
-
-JWT validated at API Gateway
-
-Gateway forwards:
+Gateway forwards via metadata:
 
 userId
 
 roles
 
 universityId
-via gRPC metadata
 
-Service must:
+Rules:
+
+Owner can delete file
+
+Owner can modify metadata
+
+Only owner can mark file shareable
+
+Only owner can share/unshare
+
+Shared users can access metadata + path
+
+Non-shareable file cannot be shared
+
+9. Business Rules
+UploadFile
 
 Extract userId from metadata
 
-Never trust client-submitted userId for "my profile"
+Validate max file size (configurable)
 
-8. Business Rules
-GetMyProfile
+If fileType == PROFILE_IMAGE:
 
-Must use authenticated userId from metadata
+Ensure only 1 active profile image per user
 
-GetProfileById
+Soft delete old image
 
-Respect visibility rules:
+Generate storedName = UUID + extension
 
-PUBLIC → visible to everyone
+Save file physically
 
-UNIVERSITY_ONLY → visible only if same universityId
+Save metadata in DB
 
-PRIVATE → only owner can view
+DeleteFile
 
-UpdateMyProfile
+Only owner allowed
 
-User can update:
+Soft delete (deleted = true)
 
-firstName
+Optionally delete physical file
 
-lastName
+ShareFile
 
-bio
+File must have isShareable = true
 
-department
+Owner only
 
-avatarUrl
+Insert into file_shares
 
-universityId
+GetFilePath
 
-User cannot update:
+Used by RAG service
 
-reputationScore
+Returns absolute path
 
-userId
+Validate:
 
-createdAt
+Owner OR
 
-9. Additional Recommended Features
-A. Profile Completion Score
+Shared user
 
-Add computed field:
+10. Kafka Integration (Optional but Recommended)
 
-completionScore (0–100)
+Topics:
 
-Calculated based on:
+file.uploaded.v1
 
-firstName
+file.deleted.v1
 
-lastName
+Example event:
 
-bio
+{
+  "eventId": "uuid",
+  "fileId": "uuid",
+  "ownerId": "uuid",
+  "fileType": "DOCUMENT",
+  "path": "/data/user-files/xxx.pdf",
+  "timestamp": "2026-02-27T10:00:00"
+}
 
-avatar
+RAG Service can consume this to auto-embed.
 
-department
+11. Docker Configuration
 
-B. Soft Delete Support
+Add to docker-compose.yml:
 
-Add:
-
-deleted BOOLEAN DEFAULT FALSE
-C. Audit Logging
-
-Log:
-
-profile updates
-
-visibility changes
-
-reputation changes
-
-D. Profile Search Indexing
-
-Allow search by:
-
-universityId
-
-department
-
-name (LIKE search)
-
-Use DB index:
-
-CREATE INDEX idx_university ON user_profiles(university_id);
-CREATE INDEX idx_department ON user_profiles(department);
-10. Docker & Orchestration
-
-Update docker-compose.yml:
-
-Add:
-
-user-profile-service:
-  build: ./user-profile-service
+file-service:
+  build: ./file-service
   ports:
-    - "9091:9091"
+    - "9092:9092"
+  volumes:
+    - file-storage:/data
   depends_on:
-    - kafka
     - postgres
+    - kafka
 
-Add Kafka:
+Volume:
 
-kafka:
-  image: bitnami/kafka:latest
+volumes:
+  file-storage:
 
-Add PostgreSQL:
+Postgres DB:
 
-postgres:
-  image: postgres:15-alpine
-
-Expose only gRPC port (9091).
+file_service_db
 
 Do NOT expose DB externally.
 
-11. application.yml
+12. application.yml
 server:
-  port: 9091
+  port: 9092
 
 spring:
   datasource:
-    url: jdbc:postgresql://postgres:5432/user_profile_db
+    url: jdbc:postgresql://postgres:5432/file_service_db
     username: postgres
     password: postgres
 
@@ -362,55 +348,125 @@ spring:
     hibernate:
       ddl-auto: update
 
-  kafka:
-    bootstrap-servers: kafka:9092
-    consumer:
-      group-id: user-profile-service
-      auto-offset-reset: earliest
-12. Error Handling
-
-Map exceptions to gRPC status:
-
-ProfileNotFound → NOT_FOUND
-
-UnauthorizedAccess → PERMISSION_DENIED
-
-InvalidUpdate → INVALID_ARGUMENT
-
-DuplicateProfile → ALREADY_EXISTS
-
+file:
+  storage:
+    root-path: /data
+    max-size-mb: 50
 13. Observability
 
-Structured logging (JSON logs recommended)
+Structured logging
 
-Include Correlation ID from metadata
+Log fileId and ownerId
 
-Log Kafka eventId
+Include correlationId from metadata
 
-Add health endpoint via Spring Actuator
+Expose Actuator health endpoint
 
-14. Definition of Done
+Log physical file write failures
 
-✔ When a new user registers, a profile is automatically created
-✔ Duplicate Kafka events do not create duplicate profiles
-✔ Authenticated user can update only their profile
-✔ Visibility rules are enforced correctly
-✔ Search works by university and department
-✔ gRPC communication works through API Gateway
-✔ Service is containerized and works via docker-compose
-✔ Dead-letter topic handles failed events
-✔ Logs contain correlation IDs
+14. Required Modification to User Profile Service
 
-15. Future Enhancements (Phase 2)
+Currently:
 
-Profile picture upload via File Service
+avatar_url TEXT
 
-Reputation driven by AI learning achievements
+This must be changed.
 
-Skill tags
+❌ REMOVE:
+avatar_url TEXT
+✅ REPLACE WITH:
+profile_image_file_id UUID
 
-Course enrollment linkage
+Updated user_profiles table:
 
-Profile analytics
+ALTER TABLE user_profiles
+ADD COLUMN profile_image_file_id UUID;
 
-GraphQL support at Gateway
+Reason:
+
+User Profile Service must NOT store file paths
+
+It should only store fileId reference
+
+File Service remains single source of truth
+
+When uploading PROFILE_IMAGE:
+
+File Service stores file
+
+Returns fileId
+
+API Gateway calls:
+UpdateMyProfile(profileImageFileId)
+
+User Profile Service only stores reference.
+
+15. RAG Service Special Access
+
+RAG service requirements:
+
+Needs direct read access to file storage volume
+
+Needs read-only access to file_service_db
+
+Should not modify files
+
+Update docker-compose:
+
+rag-service:
+  volumes:
+    - file-storage:/data:ro
+
+Grant read-only DB user.
+
+16. Definition of Done
+
+✔ Files stored physically in Docker volume
+✔ Metadata stored in PostgreSQL
+✔ Profile images separated from documents
+✔ Sharing rules enforced
+✔ Only owner can delete
+✔ RAG can access file path directly
+✔ gRPC communication works via API Gateway
+✔ Service containerized
+✔ File size validation enforced
+✔ Soft delete works
+
+17. Future Enhancements
+
+Move to MinIO (S3 compatible)
+
+Pre-signed URLs
+
+File versioning
+
+Virus scanning
+
+File encryption at rest
+
+CDN support
+
+Rate limiting per user
+
+Final Architecture Overview
+
+Services:
+
+auth-service
+
+user-profile-service
+
+file-service
+
+rag-service
+
+chat-service
+
+File Service becomes:
+
+Single Source of Truth for file storage.
+
+Other services:
+Never store file paths.
+Only store fileId references.
+Only request file path via gRPC.
