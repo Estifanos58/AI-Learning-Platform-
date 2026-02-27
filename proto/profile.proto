@@ -33,7 +33,7 @@ message UpdateProfileRequest {
   string university_id = 3;
   string department = 4;
   string bio = 5;
-  string avatar_url = 6;
+  string profile_image_file_id = 6;
 }
 
 message SearchProfilesRequest {
@@ -60,7 +60,7 @@ message UserProfileResponse {
   string university_id = 4;
   string department = 5;
   string bio = 6;
-  string avatar_url = 7;
+  string profile_image_file_id = 7;
   ProfileVisibility visibility = 8;
   int32 reputation_score = 9;
   int32 completion_score = 10;

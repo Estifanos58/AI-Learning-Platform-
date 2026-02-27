@@ -47,7 +47,7 @@ public class UserProfileApplicationService {
                                        String universityId,
                                        String department,
                                        String bio,
-                                       String avatarUrl) {
+                                       UUID profileImageFileId) {
         UserProfile profile = userProfileRepository.findByUserIdAndDeletedFalse(principal.userId())
                 .orElseThrow(() -> new ProfileNotFoundException("Profile not found"));
 
@@ -56,7 +56,7 @@ public class UserProfileApplicationService {
         profile.setUniversityId(emptyToNull(universityId));
         profile.setDepartment(emptyToNull(department));
         profile.setBio(bio == null ? "" : bio);
-        profile.setAvatarUrl(emptyToNull(avatarUrl));
+        profile.setProfileImageFileId(profileImageFileId);
 
         UserProfile saved = userProfileRepository.save(profile);
         log.info("Profile updated. userId={}, correlationId={}", principal.userId(), principal.correlationId());
@@ -122,7 +122,7 @@ public class UserProfileApplicationService {
                 .universityId(emptyToNull(universityId))
                 .department(null)
                 .bio("")
-                .avatarUrl(null)
+                .profileImageFileId(null)
                 .profileVisibility(ProfileVisibility.PUBLIC)
                 .reputationScore(0)
                 .deleted(Boolean.FALSE)
@@ -143,7 +143,7 @@ public class UserProfileApplicationService {
         if (hasText(profile.getBio())) {
             filled++;
         }
-        if (hasText(profile.getAvatarUrl())) {
+        if (profile.getProfileImageFileId() != null) {
             filled++;
         }
         if (hasText(profile.getDepartment())) {

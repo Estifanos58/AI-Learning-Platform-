@@ -38,8 +38,11 @@ public class UserProfileGrpcService extends UserProfileServiceGrpc.UserProfileSe
 
     @Override
     public void getMyProfile(GetMyProfileRequest request, StreamObserver<UserProfileResponse> responseObserver) {
-        try {
+
+
+        try{
             AuthenticatedPrincipal principal = requirePrincipal();
+            log.info("User profile request just resevied ={}", principal.userId());
             UserProfile profile = userProfileApplicationService.getMyProfile(principal);
             responseObserver.onNext(toResponse(profile));
             responseObserver.onCompleted();
@@ -72,7 +75,7 @@ public class UserProfileGrpcService extends UserProfileServiceGrpc.UserProfileSe
                     request.getUniversityId(),
                     request.getDepartment(),
                     request.getBio(),
-                    request.getAvatarUrl()
+                    parseOptionalUuid(request.getProfileImageFileId())
             );
             responseObserver.onNext(toResponse(updated));
             responseObserver.onCompleted();
@@ -177,11 +180,18 @@ public class UserProfileGrpcService extends UserProfileServiceGrpc.UserProfileSe
         if (profile.getBio() != null) {
             builder.setBio(profile.getBio());
         }
-        if (profile.getAvatarUrl() != null) {
-            builder.setAvatarUrl(profile.getAvatarUrl());
+        if (profile.getProfileImageFileId() != null) {
+            builder.setProfileImageFileId(profile.getProfileImageFileId().toString());
         }
 
         return builder.build();
+    }
+
+    private UUID parseOptionalUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return UUID.fromString(value);
     }
 
     private io.grpc.StatusException toStatusException(Exception exception) {
