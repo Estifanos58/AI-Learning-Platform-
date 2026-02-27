@@ -10,24 +10,20 @@ import com.aiplatform.gateway.dto.LoginRequest;
 import com.aiplatform.gateway.dto.LogoutRequest;
 import com.aiplatform.gateway.dto.RefreshRequest;
 import com.aiplatform.gateway.dto.SignupRequest;
-import com.aiplatform.gateway.dto.UserSummaryResponse;
 import com.aiplatform.gateway.dto.VerifyEmailRequest;
+import com.aiplatform.gateway.util.GatewayRequestUtils;
+import com.aiplatform.gateway.util.GrpcExceptionMapper;
+import com.aiplatform.gateway.util.mapper.AuthResponseMapper;
 import io.grpc.Metadata;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-
-import java.util.UUID;
 
 @Slf4j
 @RestController
@@ -58,10 +54,10 @@ public class GatewayAuthController {
                                     .setRole(request.role())
                                     .build()
                     );
-                    return ResponseEntity.ok(toAuthResponse(response));
+                    return ResponseEntity.ok(AuthResponseMapper.toDto(response));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @PostMapping("/login")
@@ -77,10 +73,10 @@ public class GatewayAuthController {
                                     .setPassword(request.password())
                                     .build()
                     );
-                    return ResponseEntity.ok(toAuthResponse(response));
+                    return ResponseEntity.ok(AuthResponseMapper.toDto(response));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @PostMapping("/verify-email")
@@ -98,7 +94,7 @@ public class GatewayAuthController {
                     return ResponseEntity.ok(new ApiMessageResponse(response.getMessage()));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @PostMapping("/refresh")
@@ -113,10 +109,10 @@ public class GatewayAuthController {
                                     .setRefreshToken(request.refreshToken())
                                     .build()
                     );
-                    return ResponseEntity.ok(toAuthResponse(response));
+                    return ResponseEntity.ok(AuthResponseMapper.toDto(response));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @PostMapping("/logout")
@@ -134,7 +130,7 @@ public class GatewayAuthController {
                     return ResponseEntity.ok(new ApiMessageResponse(response.getMessage()));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     private AuthServiceGrpc.AuthServiceBlockingStub withMetadata(String correlationId) {
@@ -145,54 +141,6 @@ public class GatewayAuthController {
     }
 
     private String correlationIdOrCreate(String correlationHeader) {
-        if (correlationHeader != null && !correlationHeader.isBlank()) {
-            return correlationHeader;
-        }
-        return UUID.randomUUID().toString();
-    }
-
-    private AuthResponse toAuthResponse(com.aiplatform.auth.proto.AuthResponse response) {
-        UserSummaryResponse user = null;
-        if (response.hasUser()) {
-            user = new UserSummaryResponse(
-                    response.getUser().getId(),
-                    response.getUser().getEmail(),
-                    response.getUser().getUsername(),
-                    response.getUser().getRole(),
-                    response.getUser().getStatus(),
-                    response.getUser().getEmailVerified()
-            );
-        }
-
-        return new AuthResponse(
-                response.getMessage(),
-                response.getAccessToken(),
-                response.getRefreshToken(),
-                response.getTokenType(),
-                response.getAccessTokenExpiresInSeconds(),
-                user
-        );
-    }
-
-    private Throwable mapGrpcException(Throwable throwable) {
-        if (!(throwable instanceof StatusRuntimeException statusRuntimeException)) {
-            return throwable;
-        }
-
-        Status.Code code = statusRuntimeException.getStatus().getCode();
-        String description = statusRuntimeException.getStatus().getDescription();
-        String message = description == null ? "Gateway request failed" : description;
-
-        HttpStatus status = switch (code) {
-            case INVALID_ARGUMENT -> HttpStatus.BAD_REQUEST;
-            case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
-            case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
-            case NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case ALREADY_EXISTS -> HttpStatus.CONFLICT;
-            case RESOURCE_EXHAUSTED -> HttpStatus.TOO_MANY_REQUESTS;
-            default -> HttpStatus.INTERNAL_SERVER_ERROR;
-        };
-
-        return new ResponseStatusException(status, message, throwable);
+        return GatewayRequestUtils.correlationIdOrCreate(correlationHeader);
     }
 }

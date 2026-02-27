@@ -29,6 +29,14 @@
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/security/JwtValidationService.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/security/PublicKeyProvider.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/security/SecurityConfig.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/GatewayAuthorizationUtils.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/GatewayPrincipal.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/GatewayPrincipalResolver.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/GatewayRequestUtils.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/GrpcExceptionMapper.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/mapper/AuthResponseMapper.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/mapper/FileResponseMapper.java
+/home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/src/main/java/com/aiplatform/gateway/util/mapper/UserProfileResponseMapper.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/target/generated-sources/protobuf/grpc-java/com/aiplatform/auth/proto/AuthServiceGrpc.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/target/generated-sources/protobuf/grpc-java/com/aiplatform/file/proto/FileServiceGrpc.java
 /home/estifanos/Documents/Projects/AI-Learning-Platform--main/api-gateway/target/generated-sources/protobuf/grpc-java/com/aiplatform/profile/proto/UserProfileServiceGrpc.java
