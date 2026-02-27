@@ -8,6 +8,12 @@ import com.aiplatform.gateway.dto.SearchProfilesResponse;
 import com.aiplatform.gateway.dto.UpdateProfileRequest;
 import com.aiplatform.gateway.dto.UserProfileResponse;
 import com.aiplatform.gateway.security.JwtValidationService;
+import com.aiplatform.gateway.util.GatewayAuthorizationUtils;
+import com.aiplatform.gateway.util.GatewayPrincipal;
+import com.aiplatform.gateway.util.GatewayPrincipalResolver;
+import com.aiplatform.gateway.util.GatewayRequestUtils;
+import com.aiplatform.gateway.util.GrpcExceptionMapper;
+import com.aiplatform.gateway.util.mapper.UserProfileResponseMapper;
 import com.aiplatform.profile.proto.GetMyProfileRequest;
 import com.aiplatform.profile.proto.GetProfileRequest;
 import com.aiplatform.profile.proto.IncrementReputationRequest.Builder;
@@ -16,16 +22,12 @@ import com.aiplatform.profile.proto.SimpleResponse;
 import com.aiplatform.profile.proto.UpdateVisibilityRequest;
 import com.aiplatform.profile.proto.UserProfileServiceGrpc;
 import io.grpc.Metadata;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
-import io.jsonwebtoken.Claims;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -37,13 +39,10 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 
 @Slf4j
 @RestController
@@ -72,10 +71,10 @@ public class GatewayProfileController {
         return Mono.fromCallable(() -> {
                     GatewayPrincipal principal = resolvePrincipal(authorization, correlationHeader);
                     var response = withMetadata(principal).getMyProfile(GetMyProfileRequest.newBuilder().build());
-                    return ResponseEntity.ok(toDto(response));
+                    return ResponseEntity.ok(UserProfileResponseMapper.toDto(response));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @GetMapping("/{userId}")
@@ -88,10 +87,10 @@ public class GatewayProfileController {
                     GatewayPrincipal principal = resolvePrincipal(authorization, correlationHeader);
                     var response = withMetadata(principal)
                             .getProfileById(GetProfileRequest.newBuilder().setUserId(userId).build());
-                    return ResponseEntity.ok(toDto(response));
+                    return ResponseEntity.ok(UserProfileResponseMapper.toDto(response));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @PutMapping("/me")
@@ -124,10 +123,10 @@ public class GatewayProfileController {
                     }
 
                     var response = withMetadata(principal).updateMyProfile(grpcRequest.build());
-                    return ResponseEntity.ok(toDto(response));
+                    return ResponseEntity.ok(UserProfileResponseMapper.toDto(response));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @GetMapping("/search")
@@ -143,19 +142,19 @@ public class GatewayProfileController {
         return Mono.fromCallable(() -> {
                     GatewayPrincipal principal = resolvePrincipal(authorization, correlationHeader);
                     SearchProfilesRequest grpcRequest = SearchProfilesRequest.newBuilder()
-                            .setUniversityId(defaultString(universityId))
-                            .setDepartment(defaultString(department))
-                            .setNameQuery(defaultString(nameQuery))
+                            .setUniversityId(GatewayRequestUtils.defaultString(universityId))
+                            .setDepartment(GatewayRequestUtils.defaultString(department))
+                            .setNameQuery(GatewayRequestUtils.defaultString(nameQuery))
                             .setPage(Math.max(page, 0))
                             .setSize(Math.max(size, 1))
                             .build();
 
                     var response = withMetadata(principal).searchProfiles(grpcRequest);
-                    List<UserProfileResponse> profiles = response.getProfilesList().stream().map(this::toDto).toList();
+                    List<UserProfileResponse> profiles = response.getProfilesList().stream().map(UserProfileResponseMapper::toDto).toList();
                     return ResponseEntity.ok(new SearchProfilesResponse(profiles, response.getTotal()));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @PatchMapping("/visibility")
@@ -172,7 +171,7 @@ public class GatewayProfileController {
                     return ResponseEntity.ok(new ApiMessageResponse(response.getMessage()));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     @PostMapping("/reputation")
@@ -183,7 +182,7 @@ public class GatewayProfileController {
     ) {
         return Mono.fromCallable(() -> {
                     GatewayPrincipal principal = resolvePrincipal(authorization, correlationHeader);
-                    requireAdmin(principal);
+                    GatewayAuthorizationUtils.requireAdmin(principal);
 
                     Builder grpcRequest = com.aiplatform.profile.proto.IncrementReputationRequest.newBuilder()
                             .setUserId(request.userId())
@@ -193,7 +192,7 @@ public class GatewayProfileController {
                     return ResponseEntity.ok(new ApiMessageResponse(response.getMessage()));
                 })
                 .subscribeOn(Schedulers.boundedElastic())
-                .onErrorMap(this::mapGrpcException);
+                .onErrorMap(GrpcExceptionMapper::toResponseStatus);
     }
 
     private UserProfileServiceGrpc.UserProfileServiceBlockingStub withMetadata(GatewayPrincipal principal) {
@@ -211,87 +210,6 @@ public class GatewayProfileController {
     }
 
     private GatewayPrincipal resolvePrincipal(String authorization, String correlationHeader) {
-        String token = bearerToken(authorization);
-        Claims claims = jwtValidationService.parseClaims(token);
-
-        String subject = claims.getSubject();
-        if (subject == null || subject.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token subject is missing");
-        }
-
-        String correlationId = correlationHeader;
-        if (correlationId == null || correlationId.isBlank()) {
-            correlationId = UUID.randomUUID().toString();
-        }
-
-        String role = claims.get("role", String.class);
-        String universityId = Optional.ofNullable(claims.get("universityId", String.class))
-                .orElseGet(() -> defaultString(claims.get("university_id", String.class)));
-
-        return new GatewayPrincipal(subject, defaultString(role), defaultString(universityId), correlationId);
-    }
-
-    private void requireAdmin(GatewayPrincipal principal) {
-        if (!principal.roles().contains("ADMIN")) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin role required");
-        }
-    }
-
-    private String bearerToken(String authorization) {
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing bearer token");
-        }
-        return authorization.substring(7);
-    }
-
-    private UserProfileResponse toDto(com.aiplatform.profile.proto.UserProfileResponse response) {
-        return new UserProfileResponse(
-                response.getUserId(),
-                response.getFirstName(),
-                response.getLastName(),
-                response.getUniversityId(),
-                response.getDepartment(),
-                response.getBio(),
-                response.getProfileImageFileId(),
-                response.getVisibility(),
-                response.getReputationScore(),
-                response.getCompletionScore(),
-                response.getCreatedAt(),
-                response.getUpdatedAt()
-        );
-    }
-
-    private String defaultString(String value) {
-        return value == null ? "" : value;
-    }
-
-    private Throwable mapGrpcException(Throwable throwable) {
-        if (!(throwable instanceof StatusRuntimeException statusRuntimeException)) {
-            return throwable;
-        }
-
-        Status.Code code = statusRuntimeException.getStatus().getCode();
-        String description = statusRuntimeException.getStatus().getDescription();
-        String message = description == null ? "Gateway request failed" : description;
-
-        HttpStatus status = switch (code) {
-            case INVALID_ARGUMENT -> HttpStatus.BAD_REQUEST;
-            case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
-            case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
-            case NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case ALREADY_EXISTS -> HttpStatus.CONFLICT;
-            case RESOURCE_EXHAUSTED -> HttpStatus.TOO_MANY_REQUESTS;
-            default -> HttpStatus.INTERNAL_SERVER_ERROR;
-        };
-
-        return new ResponseStatusException(status, message, throwable);
-    }
-
-    private record GatewayPrincipal(
-            String userId,
-            String roles,
-            String universityId,
-            String correlationId
-    ) {
+        return GatewayPrincipalResolver.resolve(authorization, correlationHeader, jwtValidationService);
     }
 }

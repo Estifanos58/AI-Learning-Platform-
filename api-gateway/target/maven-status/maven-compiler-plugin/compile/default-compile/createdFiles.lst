@@ -16,6 +16,7 @@ com/aiplatform/profile/proto/IncrementReputationRequest.class
 com/aiplatform/gateway/dto/SearchProfilesResponse.class
 com/aiplatform/profile/proto/GetProfileRequest$Builder.class
 com/aiplatform/profile/proto/IncrementReputationRequestOrBuilder.class
+com/aiplatform/gateway/util/mapper/UserProfileResponseMapper.class
 com/aiplatform/profile/proto/IncrementReputationRequest$1.class
 com/aiplatform/file/proto/ListSharedWithMeRequest$1.class
 com/aiplatform/profile/proto/SearchProfilesRequest$1.class
@@ -30,6 +31,7 @@ com/aiplatform/auth/proto/RefreshRequest$1.class
 com/aiplatform/file/proto/ListMyFilesRequest$1.class
 com/aiplatform/gateway/dto/UserSummaryResponse.class
 com/aiplatform/file/proto/UpdateFileMetadataRequestOrBuilder.class
+com/aiplatform/gateway/util/GatewayPrincipal.class
 com/aiplatform/profile/proto/UpdateVisibilityRequest$Builder.class
 com/aiplatform/file/proto/FileResponse$Builder.class
 com/aiplatform/profile/proto/GetMyProfileRequest$1.class
@@ -44,7 +46,6 @@ com/aiplatform/auth/proto/AuthResponse$Builder.class
 com/aiplatform/profile/proto/UserProfileServiceGrpc$UserProfileServiceStub.class
 com/aiplatform/file/proto/DeleteFileRequestOrBuilder.class
 com/aiplatform/file/proto/FileResponseOrBuilder.class
-com/aiplatform/gateway/controller/GatewayFileController$1.class
 com/aiplatform/auth/proto/LoginRequestOrBuilder.class
 com/aiplatform/file/proto/ListMyFilesRequest$Builder.class
 com/aiplatform/file/proto/FilePathResponse$1.class
@@ -54,6 +55,7 @@ com/aiplatform/auth/proto/VerifyRequest$Builder.class
 com/aiplatform/auth/proto/AuthServiceGrpc$AsyncService.class
 com/aiplatform/file/proto/FileServiceGrpc$FileServiceImplBase.class
 com/aiplatform/file/proto/ListSharedWithMeRequest.class
+com/aiplatform/gateway/util/GrpcExceptionMapper$1.class
 com/aiplatform/profile/proto/SearchProfilesRequestOrBuilder.class
 com/aiplatform/file/proto/UploadFileRequest$1.class
 com/aiplatform/file/proto/FileType.class
@@ -65,6 +67,7 @@ com/aiplatform/auth/proto/AuthResponse$1.class
 com/aiplatform/gateway/dto/FileMetadataUpdateRequest.class
 com/aiplatform/auth/proto/VerifyRequestOrBuilder.class
 com/aiplatform/profile/proto/UserProfileResponseOrBuilder.class
+com/aiplatform/gateway/util/GatewayPrincipalResolver.class
 com/aiplatform/auth/proto/Role$1.class
 com/aiplatform/auth/proto/Role.class
 com/aiplatform/file/proto/DeleteFileRequest.class
@@ -74,12 +77,10 @@ com/aiplatform/auth/proto/SimpleResponse$1.class
 com/aiplatform/auth/proto/RefreshRequest$Builder.class
 com/aiplatform/file/proto/UpdateFileMetadataRequest$Builder.class
 com/aiplatform/auth/proto/AuthServiceGrpc$1.class
-com/aiplatform/gateway/controller/GatewayFileController$GatewayPrincipal.class
 com/aiplatform/file/proto/GetFilePathRequestOrBuilder.class
 com/aiplatform/gateway/config/GatewayJwtProperties.class
 com/aiplatform/file/proto/ListSharedWithMeRequestOrBuilder.class
 com/aiplatform/file/proto/ListFilesResponse$1.class
-com/aiplatform/gateway/controller/GatewayProfileController$1.class
 com/aiplatform/file/proto/GetFilePathRequest$1.class
 com/aiplatform/profile/proto/UserProfileServiceGrpc$UserProfileServiceBlockingStub.class
 com/aiplatform/gateway/dto/FileShareRequest.class
@@ -114,11 +115,11 @@ com/aiplatform/auth/proto/AuthResponseOrBuilder.class
 com/aiplatform/auth/proto/SignupRequestOrBuilder.class
 com/aiplatform/gateway/dto/AuthResponse.class
 com/aiplatform/file/proto/ShareFileRequest$Builder.class
+com/aiplatform/gateway/util/GatewayAuthorizationUtils.class
 com/aiplatform/gateway/ApiGatewayApplication.class
 com/aiplatform/gateway/dto/IncrementReputationRequest.class
 com/aiplatform/profile/proto/UserProfileResponse.class
 com/aiplatform/profile/proto/UserProfileServiceGrpc$2.class
-com/aiplatform/gateway/controller/GatewayAuthController$1.class
 com/aiplatform/file/proto/GetFileRequestOrBuilder.class
 com/aiplatform/file/proto/ShareFileRequestOrBuilder.class
 com/aiplatform/gateway/security/SecurityConfig.class
@@ -130,9 +131,9 @@ com/aiplatform/auth/proto/SignupRequest$1.class
 com/aiplatform/gateway/dto/ApiMessageResponse.class
 com/aiplatform/profile/proto/UserProfileServiceGrpc$UserProfileServiceFileDescriptorSupplier.class
 com/aiplatform/profile/proto/UpdateProfileRequest.class
-com/aiplatform/gateway/controller/GatewayProfileController$GatewayPrincipal.class
 com/aiplatform/gateway/dto/UpdateProfileRequest.class
 com/aiplatform/file/proto/UploadFileRequest.class
+com/aiplatform/gateway/util/mapper/FileResponseMapper.class
 com/aiplatform/profile/proto/UserProfileServiceGrpc$3.class
 com/aiplatform/profile/proto/SimpleResponseOrBuilder.class
 com/aiplatform/file/proto/UnshareFileRequest.class
@@ -178,10 +179,13 @@ com/aiplatform/file/proto/FileServiceGrpc$FileServiceFutureStub.class
 com/aiplatform/gateway/dto/RefreshRequest.class
 com/aiplatform/gateway/controller/GatewayFileController.class
 com/aiplatform/file/proto/FileServiceGrpc$2.class
+com/aiplatform/gateway/util/mapper/AuthResponseMapper.class
 com/aiplatform/profile/proto/SearchProfilesResponseOrBuilder.class
 com/aiplatform/file/proto/SimpleResponse.class
 com/aiplatform/file/proto/FileServiceGrpc$MethodHandlers.class
+com/aiplatform/gateway/util/GrpcExceptionMapper.class
 com/aiplatform/file/proto/SimpleResponseOrBuilder.class
+com/aiplatform/gateway/util/GatewayRequestUtils.class
 com/aiplatform/profile/proto/SearchProfilesRequest$Builder.class
 com/aiplatform/gateway/config/GrpcFileProperties.class
 com/aiplatform/profile/proto/UpdateVisibilityRequestOrBuilder.class

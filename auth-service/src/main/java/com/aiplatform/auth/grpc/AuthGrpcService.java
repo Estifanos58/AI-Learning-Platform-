@@ -4,9 +4,7 @@ import com.aiplatform.auth.dto.ApiMessageResponse;
 import com.aiplatform.auth.dto.RequestMetadata;
 import com.aiplatform.auth.dto.SignupResponse;
 import com.aiplatform.auth.dto.TokenResponse;
-import com.aiplatform.auth.dto.UserSummaryResponse;
 import com.aiplatform.auth.dto.VerifyEmailRequest;
-import com.aiplatform.auth.exception.ApiException;
 import com.aiplatform.auth.proto.AuthResponse;
 import com.aiplatform.auth.proto.AuthServiceGrpc;
 import com.aiplatform.auth.proto.LoginRequest;
@@ -14,16 +12,15 @@ import com.aiplatform.auth.proto.LogoutRequest;
 import com.aiplatform.auth.proto.RefreshRequest;
 import com.aiplatform.auth.proto.SignupRequest;
 import com.aiplatform.auth.proto.SimpleResponse;
-import com.aiplatform.auth.proto.UserSummary;
 import com.aiplatform.auth.proto.VerifyRequest;
+import com.aiplatform.auth.grpc.util.AuthGrpcExceptionMapper;
+import com.aiplatform.auth.grpc.util.AuthGrpcProtoMapper;
 import com.aiplatform.auth.service.AuthService;
-import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
-import org.springframework.http.HttpStatus;
 
 @Slf4j
 @GrpcService
@@ -49,11 +46,11 @@ public class AuthGrpcService extends AuthServiceGrpc.AuthServiceImplBase {
                     .setMessage(signupResponse.message())
                     .setAccessToken(signupResponse.accessToken())
                     .setRefreshToken(signupResponse.refreshToken())
-                    .setUser(toProtoUser(signupResponse.user()))
+                    .setUser(AuthGrpcProtoMapper.toProtoUser(signupResponse.user()))
                     .build());
             responseObserver.onCompleted();
         } catch (Exception exception) {
-            responseObserver.onError(toStatusException(exception));
+            responseObserver.onError(AuthGrpcExceptionMapper.toStatusException(exception));
         }
     }
 
@@ -76,7 +73,7 @@ public class AuthGrpcService extends AuthServiceGrpc.AuthServiceImplBase {
                     .build());
             responseObserver.onCompleted();
         } catch (Exception exception) {
-            responseObserver.onError(toStatusException(exception));
+            responseObserver.onError(AuthGrpcExceptionMapper.toStatusException(exception));
         }
     }
 
@@ -90,7 +87,7 @@ public class AuthGrpcService extends AuthServiceGrpc.AuthServiceImplBase {
             responseObserver.onNext(SimpleResponse.newBuilder().setMessage(response.message()).build());
             responseObserver.onCompleted();
         } catch (Exception exception) {
-            responseObserver.onError(toStatusException(exception));
+            responseObserver.onError(AuthGrpcExceptionMapper.toStatusException(exception));
         }
     }
 
@@ -113,7 +110,7 @@ public class AuthGrpcService extends AuthServiceGrpc.AuthServiceImplBase {
                     .build());
             responseObserver.onCompleted();
         } catch (Exception exception) {
-            responseObserver.onError(toStatusException(exception));
+            responseObserver.onError(AuthGrpcExceptionMapper.toStatusException(exception));
         }
     }
 
@@ -127,39 +124,7 @@ public class AuthGrpcService extends AuthServiceGrpc.AuthServiceImplBase {
             responseObserver.onNext(SimpleResponse.newBuilder().setMessage(response.message()).build());
             responseObserver.onCompleted();
         } catch (Exception exception) {
-            responseObserver.onError(toStatusException(exception));
+            responseObserver.onError(AuthGrpcExceptionMapper.toStatusException(exception));
         }
-    }
-
-    private UserSummary toProtoUser(UserSummaryResponse user) {
-        return UserSummary.newBuilder()
-                .setId(user.id().toString())
-                .setEmail(user.email())
-                .setUsername(user.username())
-                .setRole(user.role())
-                .setStatus(user.status().name())
-                .setEmailVerified(Boolean.TRUE.equals(user.emailVerified()))
-                .build();
-    }
-
-    private Status toGrpcStatus(HttpStatus status) {
-        return switch (status) {
-            case BAD_REQUEST -> Status.INVALID_ARGUMENT;
-            case UNAUTHORIZED -> Status.UNAUTHENTICATED;
-            case FORBIDDEN -> Status.PERMISSION_DENIED;
-            case NOT_FOUND -> Status.NOT_FOUND;
-            case CONFLICT -> Status.ALREADY_EXISTS;
-            case TOO_MANY_REQUESTS -> Status.RESOURCE_EXHAUSTED;
-            default -> Status.INTERNAL;
-        };
-    }
-
-    private io.grpc.StatusException toStatusException(Exception exception) {
-        if (exception instanceof ApiException apiException) {
-            return toGrpcStatus(apiException.getStatus())
-                    .withDescription(apiException.getMessage())
-                    .asException();
-        }
-        return Status.INTERNAL.withDescription("Unexpected internal error").withCause(exception).asException();
     }
 }
