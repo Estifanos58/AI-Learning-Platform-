@@ -17,12 +17,16 @@ import java.util.Objects;
 @Component
 public class ChatRedisSubscriber {
 
-    private final ReactiveRedisMessageListenerContainer container;
+    private final ReactiveRedisConnectionFactory connectionFactory;
     private final ObjectMapper objectMapper;
 
     public ChatRedisSubscriber(ReactiveRedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
-        this.container = new ReactiveRedisMessageListenerContainer(connectionFactory);
+        this.connectionFactory = connectionFactory;
         this.objectMapper = objectMapper;
+    }
+
+    private ReactiveRedisMessageListenerContainer createContainer() {
+        return new ReactiveRedisMessageListenerContainer(connectionFactory);
     }
 
     /**
@@ -31,7 +35,7 @@ public class ChatRedisSubscriber {
      */
     public Flux<String> subscribeToNewMessages(String chatroomId) {
         PatternTopic topic = PatternTopic.of("newMessageSent." + chatroomId);
-        return container.receive(topic)
+        return Flux.defer(() -> createContainer().receive(topic))
                 .map(message -> {
                     try {
                         Map<String, Object> envelope = Map.of(
@@ -45,12 +49,16 @@ public class ChatRedisSubscriber {
                         return null;
                     }
                 })
-                .filter(Objects::nonNull);
+                .filter(Objects::nonNull)
+                .onErrorResume(error -> {
+                    log.warn("Redis subscription unavailable for newMessageSent chatroomId={}: {}", chatroomId, error.getMessage());
+                    return Flux.empty();
+                });
     }
 
     public Flux<String> subscribeToTyping(String chatroomId) {
         PatternTopic topic = PatternTopic.of("userTyping." + chatroomId);
-        return container.receive(topic)
+        return Flux.defer(() -> createContainer().receive(topic))
                 .map(message -> {
                     try {
                         Map<String, Object> envelope = Map.of(
@@ -64,12 +72,16 @@ public class ChatRedisSubscriber {
                         return null;
                     }
                 })
-                .filter(Objects::nonNull);
+                .filter(Objects::nonNull)
+                .onErrorResume(error -> {
+                    log.warn("Redis subscription unavailable for userTyping chatroomId={}: {}", chatroomId, error.getMessage());
+                    return Flux.empty();
+                });
     }
 
     public Flux<String> subscribeToNewChatroom(String userId) {
         PatternTopic topic = PatternTopic.of("ChatroomCreatedWithMessage." + userId);
-        return container.receive(topic)
+        return Flux.defer(() -> createContainer().receive(topic))
                 .map(message -> {
                     try {
                         Map<String, Object> envelope = Map.of(
@@ -83,6 +95,10 @@ public class ChatRedisSubscriber {
                         return null;
                     }
                 })
-                .filter(Objects::nonNull);
+                .filter(Objects::nonNull)
+                .onErrorResume(error -> {
+                    log.warn("Redis subscription unavailable for ChatroomCreatedWithMessage userId={}: {}", userId, error.getMessage());
+                    return Flux.empty();
+                });
     }
 }

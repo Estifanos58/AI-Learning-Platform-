@@ -37,7 +37,6 @@ spring:
           filters:
             - RewritePath=/api/chat/?(?<segment>.*), /api/internal/chat/${segment}
       globalcors:
-        add-to-simple-url-handler-mapping: true
         cors-configurations:
           '[/**]':
             allowedOrigins: ${GATEWAY_ALLOWED_ORIGINS:http://localhost:3000}
@@ -54,7 +53,7 @@ spring:
             allowCredentials: true
   data:
     redis:
-      host: ${SPRING_DATA_REDIS_HOST:redis}
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
 
 grpc:
