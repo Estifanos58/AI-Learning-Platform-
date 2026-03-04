@@ -22,7 +22,9 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
 
-        if (path.startsWith("/api/auth/") || "OPTIONS".equalsIgnoreCase(request.getMethod().name())) {
+        if (path.startsWith("/api/auth/")
+            || path.startsWith("/api/internal/auth/")
+            || "OPTIONS".equalsIgnoreCase(request.getMethod().name())) {
             return chain.filter(exchange);
         }
 

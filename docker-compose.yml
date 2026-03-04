@@ -133,7 +133,7 @@ services:
     volumes:
       - file-storage:/data
     ports:
-      - "9092:9092"
+      - "9094:9092"
 
   redis:
     image: redis:7.2-alpine3.19
