@@ -2,3 +2,10 @@ target/
 .mvn/
 .idea/
 *.iml
+
+# Sensitive keys
+src/main/resources/keys/**
+*.pem
+*.key
+*.p12
+*.jks

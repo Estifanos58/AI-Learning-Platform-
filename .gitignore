@@ -1,12 +1,29 @@
-<<<<<<< HEAD
-# Ignore build output directories
+# Build output
 target/
+**/target/
+build/
+**/build/
 
 # IDE and OS files
 .idea/
 .vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Logs and temp
 *.log
 *.tmp
-=======
-target/
->>>>>>> f3ba78d (Remove tracked target/ files and ignore them)
+*.swp
+
+# Env / local overrides
+.env
+.env.*
+*.local
+
+# Sensitive key material (all services)
+**/src/main/resources/keys/**
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
