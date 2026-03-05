@@ -17,15 +17,36 @@ public class EmailServiceImpl implements EmailService {
     private final AppMailProperties appMailProperties;
 
     @Override
+    public void sendEmail(String to, String subject, String body) {
+        sendOrLog(to, subject, body);
+    }
+
+    @Override
     public void sendVerificationEmail(User user, String token) {
-        String body = "Verify your email using token: " + token;
-        sendOrLog(user.getEmail(), "Verify your account", body);
+        String verificationLink = appMailProperties.getVerifyBaseUrl() + token;
+        String body = "Hello,\n\n"
+                + "Welcome to " + appMailProperties.getAppName() + ".\n"
+                + "Please verify your email using the link below:\n"
+                + verificationLink + "\n\n"
+                + "If you did not create this account, you can ignore this message.\n\n"
+                + "Regards,\n"
+                + appMailProperties.getAppName();
+
+        sendEmail(user.getEmail(), "Verify your account", body);
     }
 
     @Override
     public void sendPasswordResetEmail(User user, String token) {
-        String body = "Reset your password using token: " + token;
-        sendOrLog(user.getEmail(), "Reset your password", body);
+        String resetLink = appMailProperties.getResetPasswordBaseUrl() + token;
+        String body = "Hello,\n\n"
+                + "We received a request to reset your password for " + appMailProperties.getAppName() + ".\n"
+                + "Use the link below to set a new password:\n"
+                + resetLink + "\n\n"
+                + "If you did not request a password reset, you can ignore this message.\n\n"
+                + "Regards,\n"
+                + appMailProperties.getAppName();
+
+        sendEmail(user.getEmail(), "Reset your password", body);
     }
 
     private void sendOrLog(String to, String subject, String body) {

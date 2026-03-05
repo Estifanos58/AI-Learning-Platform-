@@ -1,465 +1,639 @@
-1. Objective
+Below is a **production-grade `INSTRUCTION.md`** you can give to an AI agent to implement the **Notification Service** and the required **changes to Auth Service and API Gateway** within your existing microservice architecture.
 
-Refactor the existing File Service to introduce a hierarchical folder system.
+---
 
-The new requirements are:
+# INSTRUCTION.md
 
-A user MUST create a folder before uploading files.
+# Notification Service + Auth Service Refactor + API Gateway Enhancements
 
-Every file MUST belong to exactly one folder.
+---
 
-Introduce:
+# 1. Objective
 
-Create Folder
+Introduce a **Notification Service** responsible for sending system emails.
 
-Update Folder
+The initial responsibility of the service is:
 
-Delete Folder (soft delete)
+* Sending **email verification messages** for newly registered users.
+* Sending **resend verification codes** when requested by the user.
 
-Share Folder
+This change requires:
 
-Unshare Folder
+1. **Creating a new Notification Service**
+2. **Removing email sending logic from Auth Service**
+3. **Publishing verification events from Auth Service to Kafka**
+4. **Notification Service consuming those events**
+5. **Sending email via Gmail SMTP**
+6. **Adding resend verification endpoint**
+7. **Adding endpoint-specific rate limiting**
+8. **Adding throttling protections in API Gateway**
 
-List Folders
+The system must remain **event-driven, scalable, and production-grade**.
 
-Refactor file upload logic to require folderId
+---
 
-Modify database schema accordingly
+# 2. Updated System Architecture
 
-Update gRPC contracts
+After implementation the system will contain **6 backend services**:
 
-Update API Gateway endpoints
+| Service                  | Technology       | Responsibility                           |
+| ------------------------ | ---------------- | ---------------------------------------- |
+| API Gateway              | Spring Boot      | REST entry point, rate limiting, routing |
+| Auth Service             | Spring Boot      | Authentication, token issuance           |
+| User Profile Service     | Spring Boot      | User profile management                  |
+| File Service             | Spring Boot      | File storage and sharing                 |
+| RAG Service              | Python (FastAPI) | AI retrieval system                      |
+| **Notification Service** | Python (FastAPI) | Email notifications                      |
 
-Preserve all previous file features
+---
 
-Maintain Kafka event publication
+# 3. Architectural Principles
 
-The service must remain production-grade.
+The implementation must preserve the following:
 
-2. High-Level Architectural Constraints
+### Maintain
 
-Do NOT break:
+* Kafka event driven communication
+* gRPC communication via API Gateway
+* JWT validation at API Gateway
+* Microservice isolation
+* No cross-service database access
+* No email logic inside Auth Service
+* Strong rate limiting and throttling
 
-gRPC communication model
+### Communication Pattern
 
-Kafka event-driven architecture
+```
+User → API Gateway → gRPC → Auth Service
+Auth Service → Kafka → Notification Service
+Notification Service → Gmail SMTP → User
+```
 
-Local filesystem storage
+---
 
-Soft delete logic
+# 4. Kafka Event Design
 
-Ownership validation
+Create new event:
 
-Sharing model consistency
+### Topic
 
-RAG service direct volume access
+```
+user.email.verification.v1
+```
 
-PostgreSQL metadata storage
+---
 
-JWT is validated at API Gateway.
-User identity is received via gRPC metadata.
+### Event Payload
 
-3. New Domain Model – Folder
-3.1 Folder Table
-
-Create a new table:
-
-CREATE TABLE folders (
-    id UUID PRIMARY KEY,
-    owner_id UUID NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    parent_id UUID NULL,
-    deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
-);
-
-Indexes:
-
-CREATE INDEX idx_folders_owner ON folders(owner_id);
-CREATE INDEX idx_folders_parent ON folders(parent_id);
-
-Notes:
-
-parent_id allows future nested folders.
-
-For now, allow only single-level hierarchy (validation enforced in service).
-
-No foreign key to users table.
-
-Soft delete only.
-
-3.2 Folder Shares Table
-CREATE TABLE folder_shares (
-    id UUID PRIMARY KEY,
-    folder_id UUID NOT NULL,
-    shared_with_user_id UUID NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-    UNIQUE(folder_id, shared_with_user_id)
-);
-
-Indexes:
-
-CREATE INDEX idx_folder_shared_user ON folder_shares(shared_with_user_id);
-
-Folder sharing automatically grants access to all files in that folder.
-
-4. File Schema Changes (Critical)
-
-Modify files table:
-
-Add:
-
-ALTER TABLE files
-ADD COLUMN folder_id UUID NOT NULL;
-
-Add index:
-
-CREATE INDEX idx_files_folder ON files(folder_id);
-
-Important:
-
-Every file MUST reference a folder.
-
-Remove logic that stores files directly under /profile-images/{userId}
-
-Instead:
-
-/data/{ownerId}/{folderId}/{fileId}.{ext}
-
-Profile image logic still exists, but file must belong to a folder.
-
-5. Updated Domain Models
-FolderEntity
-@Entity
-@Table(name = "folders")
-public class FolderEntity {
-
-    @Id
-    private UUID id;
-
-    private UUID ownerId;
-
-    private String name;
-
-    private UUID parentId;
-
-    private Boolean deleted;
-
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+```json
+{
+  "eventId": "uuid",
+  "userId": "uuid",
+  "email": "user@email.com",
+  "username": "username",
+  "verificationCode": "123456",
+  "createdAt": "2026-03-05T10:00:00Z"
 }
-FileEntity Modification
+```
 
-Add:
+---
 
-@Column(name = "folder_id", nullable = false)
-private UUID folderId;
-6. Storage Structure Refactor
+### Event Rules
 
-OLD:
+* Produced by **Auth Service**
+* Consumed by **Notification Service**
+* Use **JSON serialization**
+* Include **correlationId** header
+* Include **event versioning**
 
-/data/profile-images/{userId}
-/data/user-files/{userId}
+---
 
-NEW:
+# 5. Auth Service Refactor
 
-/data/{ownerId}/{folderId}/{storedFileName}
+## 5.1 Remove Email Logic
+
+Completely remove:
+
+* SMTP configuration
+* Email sender classes
+* Email templates
+* Verification email sending logic
+
+Auth Service must **NOT send emails directly**.
+
+---
+
+# 5.2 Verification Code Generation
+
+When user registers:
+
+1. Generate verification code
+
+```
+6 digit numeric code
+```
+
+Example:
+
+```
+482913
+```
+
+---
+
+### Storage Table
+
+Create table:
+
+```
+email_verifications
+```
+
+```sql
+CREATE TABLE email_verifications (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    verification_code VARCHAR(10) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL
+);
+```
+
+Indexes:
+
+```
+CREATE INDEX idx_email_verification_user
+ON email_verifications(user_id);
+```
+
+---
+
+### Code Expiration
+
+```
+Expiration: 10 minutes
+```
+
+---
+
+# 5.3 Registration Flow (New)
+
+When user signs up:
+
+```
+1. Create user
+2. Generate verification code
+3. Store verification code
+4. Publish Kafka event
+5. Return tokens
+```
+
+---
+
+### Publish Event
+
+Topic:
+
+```
+user.email.verification.v1
+```
+
+Payload must include:
+
+```
+userId
+email
+username
+verificationCode
+```
+
+---
+
+# 5.4 Verify Email Flow
+
+Request:
+
+```
+verifyEmail(token)
+```
+
+Validation:
+
+1. Code exists
+2. Code not expired
+3. Code not used
+4. Belongs to user
+
+If valid:
+
+```
+mark used = true
+set user.emailVerified = true
+```
+
+---
+
+# 5.5 Resend Verification Code
+
+Add new method.
+
+### gRPC
+
+```
+ResendVerificationCode
+```
+
+Flow:
+
+```
+1. Identify user via JWT metadata
+2. Check if already verified → reject
+3. Generate new code
+4. Invalidate previous codes
+5. Store new code
+6. Publish Kafka event
+```
+
+---
+
+### Security Rule
+
+Resend allowed only if:
+
+```
+emailVerified == false
+```
+
+---
+
+# 6. Notification Service Implementation
+
+The service will be built using:
+
+```
+FastAPI
+Kafka Consumer
+SMTP Email Sender
+```
+
+---
+
+# 7. Notification Service Responsibilities
+
+The service must:
+
+* Subscribe to Kafka verification events
+* Generate email message
+* Send email via Gmail
+* Handle retry logic
+* Log failures
+* Ensure idempotency
+
+---
+
+# 8. Notification Service Architecture
+
+Components:
+
+```
+notification-service/
+ ├── app
+ │   ├── main.py
+ │   ├── config.py
+ │   ├── kafka
+ │   │   ├── consumer.py
+ │   │   └── topics.py
+ │   ├── email
+ │   │   ├── sender.py
+ │   │   └── templates
+ │   │       └── verify_email.html
+ │   ├── handlers
+ │   │   └── verification_handler.py
+ │   └── utils
+ │       └── retry.py
+```
+
+---
+
+# 9. Gmail SMTP Configuration
+
+Use environment variables:
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=system@email.com
+SMTP_PASSWORD=app_password
+```
+
+Security:
+
+```
+TLS enabled
+```
+
+---
+
+# 10. Email Template
+
+Verification email:
+
+```
+Subject: Verify your email
+
+Hello {username},
+
+Your verification code is:
+
+{verificationCode}
+
+This code expires in 10 minutes.
+```
+
+---
+
+# 11. Kafka Consumer Behavior
+
+Consumer must:
+
+* Subscribe to:
+
+```
+user.email.verification.v1
+```
+
+* Deserialize JSON
+* Call handler
+* Send email
+
+---
+
+### Retry Policy
+
+Retries:
+
+```
+3 retries
+Exponential backoff
+```
+
+If retries exhausted:
+
+```
+log error
+send to dead-letter-topic
+```
+
+Dead Letter Topic:
+
+```
+notification.email.failed.v1
+```
+
+---
+
+# 12. Idempotency Requirement
+
+Consumer must ensure:
+
+```
+same eventId processed only once
+```
+
+Solution:
+
+* Use Redis or in-memory deduplication
+* TTL: 24h
+
+---
+
+# 13. API Gateway Changes
+
+Add route:
+
+```
+POST /auth/resend-verification
+```
+
+Gateway must:
+
+```
+forward request to auth-service
+```
+
+---
+
+# 14. API Gateway Rate Limiting
+
+Different endpoints require different limits.
+
+### Normal Endpoints
+
+Example:
+
+```
+100 requests / minute
+```
+
+---
+
+### Auth Endpoints
+
+Example:
+
+```
+login: 10/minute
+signup: 5/minute
+```
+
+---
+
+### Resend Verification Endpoint
+
+Very strict:
+
+```
+3 requests / hour
+```
+
+---
+
+# 15. Throttling Protection
+
+Implement **IP based throttling**.
 
 Rules:
 
-Folder must exist before physical write
+If client exceeds limits:
 
-Folder physical directory auto-created if missing
+```
+429 Too Many Requests
+```
 
-If folder is deleted → files inside become inaccessible
+---
 
-7. New gRPC Definitions
-
-Update file.proto
-
-Add RPCs:
-
-CreateFolder(CreateFolderRequest) returns (FolderResponse)
-UpdateFolder(UpdateFolderRequest) returns (FolderResponse)
-DeleteFolder(DeleteFolderRequest) returns (SimpleResponse)
-ShareFolder(ShareFolderRequest) returns (SimpleResponse)
-UnshareFolder(UnshareFolderRequest) returns (SimpleResponse)
-ListMyFolders(ListMyFoldersRequest) returns (ListFoldersResponse)
-ListSharedFolders(ListSharedFoldersRequest) returns (ListFoldersResponse)
-
-Modify:
-
-UploadFileRequest
+### Additional Protection
 
 Add:
 
-string folderId = X;
+```
+burst protection
+token bucket algorithm
+```
 
-Make it required.
+---
 
-8. Business Logic Rules
-CreateFolder
+# 16. gRPC Contract Updates
 
-Extract ownerId from metadata
+Add method:
 
-Name required
+```
+rpc ResendVerificationCode(ResendVerificationRequest)
+returns (SimpleResponse)
+```
 
-Prevent duplicate folder names per owner at same hierarchy level
+---
 
-Generate UUID
+### Request
 
-Save to DB
+```
+message ResendVerificationRequest {}
+```
 
-Publish event (optional)
+User is derived from:
 
-UpdateFolder
+```
+gRPC metadata
+```
 
-Only owner
+---
 
-Cannot update deleted folder
+# 17. Observability Requirements
 
-Cannot rename to existing sibling name
+Log fields:
 
-DeleteFolder
+```
+correlationId
+userId
+eventId
+email
+requestIp
+```
 
-Only owner
+Metrics:
 
-Soft delete
+```
+email.sent.count
+email.failed.count
+verification.code.generated
+verification.resend.count
+```
 
-All files inside folder:
+---
 
-Soft delete automatically
+# 18. Security Requirements
 
-Publish:
+Must implement:
 
-folder.deleted.v1
-
-file.deleted.v1 for each file (optional batch event)
-
-ShareFolder
-
-Only owner
-
-Insert into folder_shares
-
-All files inside implicitly accessible
-
-UnshareFolder
-
-Remove entry from folder_shares
-
-Files inside become inaccessible unless individually shared
-
-9. Updated UploadFile Logic
-
-Before uploading:
-
-Validate folderId exists
-
-Validate folder not deleted
+### Input validation
 
 Validate:
 
-Owner OR
+```
+email
+username
+verification code
+```
 
-Folder shared with user
+---
 
-Then:
+### Sensitive Data
 
-Store physically in:
+Do NOT log:
 
-/data/{ownerId}/{folderId}/
+```
+verification codes
+SMTP password
+JWT
+```
 
-Save metadata including folderId
+---
 
-Profile image logic:
+### SMTP Security
 
-Still ensure only 1 active PROFILE_IMAGE per user
+Use:
 
-Must belong to a folder
+```
+TLS
+App Password
+Environment variables
+```
 
-Soft delete previous image
+---
 
-10. Authorization Matrix
-Operation	Owner	Folder Shared User
-Upload	✔	✔ (if allowed)
-Delete file	✔	✖
-Share file	✔	✖
-Read metadata	✔	✔
-Delete folder	✔	✖
-Share folder	✔	✖
-11. Kafka Topics
+# 19. Deployment
 
-Add:
+Update `docker-compose`.
 
-folder.created.v1
+Add service:
 
-folder.deleted.v1
+```
+notification-service
+```
 
-folder.shared.v1
+Dependencies:
 
-Existing:
+```
+kafka
+zookeeper
+```
 
-file.uploaded.v1
+---
 
-file.deleted.v1
+# 20. Definition of Done
 
-Example folder event:
+The implementation is complete when:
 
-{
-  "eventId": "uuid",
-  "folderId": "uuid",
-  "ownerId": "uuid",
-  "timestamp": "2026-03-01T10:00:00"
-}
-12. API Gateway Updates
+✔ Notification Service created
+✔ Auth Service no longer sends emails
+✔ Verification events published to Kafka
+✔ Notification Service consumes events
+✔ Emails sent through Gmail SMTP
+✔ Resend verification endpoint added
+✔ API Gateway route added
+✔ Endpoint specific rate limiting implemented
+✔ Throttling protections implemented
+✔ Dead letter queue implemented
+✔ Retry logic implemented
+✔ Observability implemented
+✔ Security best practices applied
+✔ Full integration tested
 
-Expose REST endpoints mapping to gRPC:
+---
 
-POST   /folders
-PUT    /folders/{id}
-DELETE /folders/{id}
-POST   /folders/{id}/share
-DELETE /folders/{id}/share/{userId}
-GET    /folders
-GET    /folders/shared
+# 21. Future Enhancements (Not Now)
 
-Modify:
+Planned notification features:
 
-POST /files
+* Password reset emails
+* File share notifications
+* In-app notifications
+* WebSocket notifications
+* SMS notifications
+* Email template service
+* Notification preference system
 
-Must include:
+---
 
-folderId
+If you'd like, I can also generate a **much stronger “enterprise-grade” version of this instruction (≈3x better)** that includes:
 
-Gateway continues forwarding:
+* **exact Kafka configs**
+* **Spring Boot rate limiter configs**
+* **FastAPI Kafka consumer implementation structure**
+* **Gmail OAuth2 instead of password**
+* **circuit breakers**
+* **retry topics**
+* **saga/event patterns**
 
-userId
-
-roles
-
-universityId
-
-correlationId
-
-13. Required Refactoring Steps (Sequential Execution Plan)
-
-Create FolderEntity + Repository
-
-Create FolderShareEntity + Repository
-
-Update FileEntity to include folderId
-
-Write DB migration
-
-Refactor file upload service
-
-Refactor storage path logic
-
-Add folder service layer
-
-Implement gRPC methods
-
-Update protobuf
-
-Update API Gateway mappings
-
-Add integration tests
-
-Validate backward compatibility migration
-
-Update docker-compose if necessary
-
-Run full regression test
-
-14. Observability Requirements
-
-Log:
-
-folderId
-
-ownerId
-
-fileId
-
-correlationId
-
-Add validation error logs.
-
-Add metrics:
-
-folder.create.count
-
-file.upload.count
-
-folder.share.count
-
-15. Definition of Done
-
-✔ Folder CRUD implemented
-✔ Folder sharing implemented
-✔ Files require folderId
-✔ Storage path refactored
-✔ Kafka events emitted
-✔ gRPC updated
-✔ API Gateway updated
-✔ Soft delete enforced
-✔ Ownership validation correct
-✔ No cross-service DB coupling
-✔ RAG still reads file path via volume
-✔ All integration tests pass
-
-16. Important Constraints
-
-Do NOT introduce cross-service foreign keys
-
-Do NOT break RAG direct file access
-
-Do NOT expose DB externally
-
-Do NOT store raw file content in PostgreSQL
-
-Maintain clean separation of concerns
-
-Maintain production-readiness
-
-17. Future Enhancements (Not Now)
-
-Nested folders (true tree support)
-
-Folder-level permission roles
-
-Folder-level visibility (public/private)
-
-Folder quotas
-
-Bulk file move between folders
-
-Versioned folders
-
-Migration to S3/MinIO
-
-Final Architecture After Refactor
-
-File Service becomes:
-
-Owner of file metadata
-
-Owner of folder metadata
-
-Owner of physical file storage
-
-Folder-based hierarchical storage system
-
-Event-driven file lifecycle publisher
-
-Integrated with:
-
-Auth Service
-
-User Profile Service
-
-RAG Service
-
-API Gateway
+—which would make your platform **closer to production systems used by companies like Notion or Slack.**
