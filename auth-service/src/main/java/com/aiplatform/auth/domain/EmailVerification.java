@@ -33,8 +33,8 @@ public class EmailVerification {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "token_hash", nullable = false)
-    private String tokenHash;
+    @Column(name = "verification_code", nullable = false, length = 10)
+    private String verificationCode;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;

@@ -54,7 +54,7 @@ services:
       GRPC_SERVER_PORT: 9090
       APP_GRPC_AUTH_SERVICE_SECRET: change-me-shared-secret
       APP_KAFKA_TOPIC_USER_REGISTERED: user.registered.v1
-      APP_MAIL_ENABLED: "false"
+      APP_KAFKA_TOPIC_USER_EMAIL_VERIFICATION: user.email.verification.v1
 
   profile-postgres:
     image: postgres:15-alpine
@@ -223,6 +223,27 @@ services:
       APP_GRPC_CHAT_SERVICE_SECRET: change-me-shared-secret
     ports:
       - "8080:8080"
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: notification-service
+    depends_on:
+      kafka:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_GROUP_ID: notification-service-v1
+      KAFKA_TOPIC_EMAIL_VERIFICATION: user.email.verification.v1
+      KAFKA_TOPIC_EMAIL_FAILED: notification.email.failed.v1
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@aiplatform.local}
+    ports:
+      - "8086:8086"
 
   rag-service:
     image: alpine:3.20

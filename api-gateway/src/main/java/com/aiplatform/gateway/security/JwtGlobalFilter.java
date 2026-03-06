@@ -11,9 +11,24 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.Set;
+
 @Component
 @RequiredArgsConstructor
 public class JwtGlobalFilter implements GlobalFilter, Ordered {
+
+    private static final Set<String> PUBLIC_AUTH_PATHS = Set.of(
+            "/api/auth/signup",
+            "/api/auth/login",
+            "/api/auth/verify-email",
+            "/api/auth/refresh",
+            "/api/auth/logout",
+            "/api/internal/auth/signup",
+            "/api/internal/auth/login",
+            "/api/internal/auth/verify-email",
+            "/api/internal/auth/refresh",
+            "/api/internal/auth/logout"
+    );
 
     private final JwtValidationService jwtValidationService;
 
@@ -22,8 +37,7 @@ public class JwtGlobalFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
 
-        if (path.startsWith("/api/auth/")
-            || path.startsWith("/api/internal/auth/")
+        if (PUBLIC_AUTH_PATHS.contains(path)
             || "OPTIONS".equalsIgnoreCase(request.getMethod().name())) {
             return chain.filter(exchange);
         }

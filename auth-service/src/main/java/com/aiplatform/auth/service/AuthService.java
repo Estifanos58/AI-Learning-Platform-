@@ -8,6 +8,8 @@ public interface AuthService {
 
     ApiMessageResponse verifyEmail(VerifyEmailRequest request);
 
+    ApiMessageResponse resendVerificationCode(RequestMetadata metadata);
+
     TokenResponse login(LoginRequest request, RequestMetadata metadata);
 
     TokenResponse refresh(RefreshRequest request, RequestMetadata metadata);

@@ -16,6 +16,7 @@ public class GrpcAuthServerInterceptor implements ServerInterceptor {
 
     private static final Metadata.Key<String> CORRELATION_ID_KEY = Metadata.Key.of(GrpcMetadataConstants.CORRELATION_ID_HEADER, Metadata.ASCII_STRING_MARSHALLER);
     private static final Metadata.Key<String> SERVICE_SECRET_KEY = Metadata.Key.of(GrpcMetadataConstants.SERVICE_SECRET_HEADER, Metadata.ASCII_STRING_MARSHALLER);
+    private static final Metadata.Key<String> USER_ID_KEY = Metadata.Key.of(GrpcMetadataConstants.USER_ID_HEADER, Metadata.ASCII_STRING_MARSHALLER);
 
     private final GrpcAuthProperties grpcAuthProperties;
 
@@ -36,10 +37,13 @@ public class GrpcAuthServerInterceptor implements ServerInterceptor {
         if (correlationId == null || correlationId.isBlank()) {
             correlationId = UUID.randomUUID().toString();
         }
+        String userId = headers.get(USER_ID_KEY);
 
         log.info("Incoming gRPC call. method={}, correlationId={}", call.getMethodDescriptor().getFullMethodName(), correlationId);
 
-        Context context = Context.current().withValue(GrpcContextKeys.CORRELATION_ID, correlationId);
+        Context context = Context.current()
+                .withValue(GrpcContextKeys.CORRELATION_ID, correlationId)
+                .withValue(GrpcContextKeys.USER_ID, userId == null ? "" : userId);
         return Contexts.interceptCall(context, call, headers, next);
     }
 }

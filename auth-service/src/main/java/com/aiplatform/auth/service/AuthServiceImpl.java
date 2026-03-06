@@ -7,6 +7,7 @@ import com.aiplatform.auth.mapper.UserMapper;
 import com.aiplatform.auth.repository.*;
 import com.aiplatform.auth.security.JwtProperties;
 import com.aiplatform.auth.security.JwtService;
+import com.aiplatform.auth.service.event.VerificationEmailEventPublisher;
 import com.aiplatform.auth.service.event.UserRegisteredEventPublisher;
 import com.aiplatform.auth.util.TokenGeneratorUtil;
 import com.aiplatform.auth.util.TokenHashUtil;
@@ -39,8 +40,8 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
     private final UserMapper userMapper;
-    private final EmailService emailService;
     private final UserRegisteredEventPublisher userRegisteredEventPublisher;
+    private final VerificationEmailEventPublisher verificationEmailEventPublisher;
 
     @Override
     @Transactional
@@ -61,7 +62,9 @@ public class AuthServiceImpl implements AuthService {
                 .emailVerified(Boolean.FALSE)
                 .build();
         User savedUser = userRepository.save(user);
-            userRegisteredEventPublisher.publish(savedUser.getId(), savedUser.getEmail(), null, metadata.correlationId());
+        userRegisteredEventPublisher.publish(savedUser.getId(), savedUser.getEmail(), null, metadata.correlationId());
+
+        issueAndPublishVerificationCode(savedUser, metadata.correlationId(), false);
 
 
         String accessToken = jwtService.generateAccessToken(user);
@@ -75,18 +78,6 @@ public class AuthServiceImpl implements AuthService {
                 .ipAddress(metadata.ipAddress())
                 .userAgent(metadata.userAgent())
                 .build());
-
-
-
-        String rawToken = tokenGeneratorUtil.generateToken();
-        emailVerificationRepository.save(EmailVerification.builder()
-                .user(savedUser)
-                .tokenHash(tokenHashUtil.sha256(rawToken))
-                .expiresAt(LocalDateTime.now().plusHours(24))
-                .used(Boolean.FALSE)
-                .build());
-
-        emailService.sendVerificationEmail(savedUser, rawToken);
         log.info("User signed up successfully. userId={}", savedUser.getId());
 
         return new SignupResponse("Signup successful. Please verify your email.", accessToken, refreshRawToken, userMapper.toSummary(savedUser));
@@ -95,12 +86,12 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public ApiMessageResponse verifyEmail(VerifyEmailRequest request) {
-        String tokenHash = tokenHashUtil.sha256(request.token());
-        EmailVerification verification = emailVerificationRepository.findByTokenHash(tokenHash)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid verification token"));
+        EmailVerification verification = emailVerificationRepository
+            .findTopByVerificationCodeAndUsedFalseOrderByCreatedAtDesc(request.code())
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid verification code"));
 
         if (Boolean.TRUE.equals(verification.getUsed()) || verification.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Verification token is expired or already used");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Verification code is expired or already used");
         }
 
         verification.setUsed(Boolean.TRUE);
@@ -111,6 +102,31 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         return new ApiMessageResponse("Email verified successfully");
+    }
+
+    @Override
+    @Transactional
+    public ApiMessageResponse resendVerificationCode(RequestMetadata metadata) {
+        if (metadata.userId() == null || metadata.userId().isBlank()) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Authenticated user is required");
+        }
+
+        UUID userId;
+        try {
+            userId = UUID.fromString(metadata.userId());
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid authenticated user");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (Boolean.TRUE.equals(user.getEmailVerified())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Email is already verified");
+        }
+
+        issueAndPublishVerificationCode(user, metadata.correlationId(), true);
+        return new ApiMessageResponse("Verification code resent successfully");
     }
 
     @Override
@@ -233,7 +249,6 @@ public class AuthServiceImpl implements AuthService {
                     .expiresAt(LocalDateTime.now().plusHours(1))
                     .used(Boolean.FALSE)
                     .build());
-            emailService.sendPasswordResetEmail(user, resetRawToken);
         });
 
         return new ApiMessageResponse("If the email exists, reset instructions were sent");
@@ -265,5 +280,29 @@ public class AuthServiceImpl implements AuthService {
                 });
 
         return new ApiMessageResponse("Password reset successful");
+    }
+
+    private void issueAndPublishVerificationCode(User user, String correlationId, boolean invalidateExisting) {
+        if (invalidateExisting) {
+            emailVerificationRepository.invalidateActiveCodesByUserId(user.getId());
+        }
+
+        String verificationCode = tokenGeneratorUtil.generateNumericCode(6);
+        emailVerificationRepository.save(EmailVerification.builder()
+                .user(user)
+                .verificationCode(verificationCode)
+                .expiresAt(LocalDateTime.now().plusMinutes(10))
+                .used(Boolean.FALSE)
+                .build());
+
+        verificationEmailEventPublisher.publish(
+                user.getId(),
+                user.getEmail(),
+                user.getUsername(),
+                verificationCode,
+                correlationId
+        );
+
+        log.info("Verification code generated and event published. userId={}", user.getId());
     }
 }

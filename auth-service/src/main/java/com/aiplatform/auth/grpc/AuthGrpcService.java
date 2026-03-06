@@ -10,6 +10,7 @@ import com.aiplatform.auth.proto.AuthServiceGrpc;
 import com.aiplatform.auth.proto.LoginRequest;
 import com.aiplatform.auth.proto.LogoutRequest;
 import com.aiplatform.auth.proto.RefreshRequest;
+import com.aiplatform.auth.proto.ResendVerificationRequest;
 import com.aiplatform.auth.proto.SignupRequest;
 import com.aiplatform.auth.proto.SimpleResponse;
 import com.aiplatform.auth.proto.VerifyRequest;
@@ -83,7 +84,24 @@ public class AuthGrpcService extends AuthServiceGrpc.AuthServiceImplBase {
             String correlationId = GrpcContextKeys.CORRELATION_ID.get();
             log.info("Handling VerifyEmail gRPC request. correlationId={}", correlationId);
 
-            ApiMessageResponse response = authService.verifyEmail(new VerifyEmailRequest(request.getToken()));
+            ApiMessageResponse response = authService.verifyEmail(new VerifyEmailRequest(request.getCode()));
+            responseObserver.onNext(SimpleResponse.newBuilder().setMessage(response.message()).build());
+            responseObserver.onCompleted();
+        } catch (Exception exception) {
+            responseObserver.onError(AuthGrpcExceptionMapper.toStatusException(exception));
+        }
+    }
+
+    @Override
+    public void resendVerificationCode(ResendVerificationRequest request, StreamObserver<SimpleResponse> responseObserver) {
+        try {
+            String correlationId = GrpcContextKeys.CORRELATION_ID.get();
+            String userId = GrpcContextKeys.USER_ID.get();
+            log.info("Handling ResendVerificationCode gRPC request. correlationId={}", correlationId);
+
+            ApiMessageResponse response = authService.resendVerificationCode(
+                    new RequestMetadata("grpc-client", "api-gateway", correlationId, userId)
+            );
             responseObserver.onNext(SimpleResponse.newBuilder().setMessage(response.message()).build());
             responseObserver.onCompleted();
         } catch (Exception exception) {

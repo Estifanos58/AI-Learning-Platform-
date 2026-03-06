@@ -8,4 +8,5 @@ public final class GrpcContextKeys {
     }
 
     public static final Context.Key<String> CORRELATION_ID = Context.key("correlation-id");
+    public static final Context.Key<String> USER_ID = Context.key("user-id");
 }

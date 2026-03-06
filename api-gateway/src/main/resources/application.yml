@@ -7,34 +7,94 @@ spring:
   cloud:
     gateway:
       routes:
-        - id: auth-rate-limited
+        - id: auth-signup-rate-limited
+          uri: forward:/
+          predicates:
+            - Path=/api/auth/signup
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 5
+            - RewritePath=/api/auth/signup, /api/internal/auth/signup
+        - id: auth-login-rate-limited
+          uri: forward:/
+          predicates:
+            - Path=/api/auth/login
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 10
+            - RewritePath=/api/auth/login, /api/internal/auth/login
+        - id: auth-resend-rate-limited
+          uri: forward:/
+          predicates:
+            - Path=/api/auth/resend-verification
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 1
+                redis-rate-limiter.burstCapacity: 3
+                redis-rate-limiter.requestedTokens: 1200
+            - RewritePath=/api/auth/resend-verification, /api/internal/auth/resend-verification
+        - id: auth-verify-rate-limited
+          uri: forward:/
+          predicates:
+            - Path=/api/auth/verify-email
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+            - RewritePath=/api/auth/verify-email, /api/internal/auth/verify-email
+        - id: auth-default-rate-limited
           uri: forward:/
           predicates:
             - Path=/api/auth/**
           filters:
             - name: RequestRateLimiter
               args:
-                key-resolver: '#{@clientRateLimitKeyResolver}'
-                redis-rate-limiter.replenishRate: 10
-                redis-rate-limiter.burstCapacity: 20
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 120
             - RewritePath=/api/auth/?(?<segment>.*), /api/internal/auth/${segment}
         - id: profile-route
           uri: forward:/
           predicates:
             - Path=/api/profile/**
           filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 120
             - RewritePath=/api/profile/?(?<segment>.*), /api/internal/profile/${segment}
         - id: file-route
           uri: forward:/
           predicates:
             - Path=/api/files/**
           filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 120
             - RewritePath=/api/files/?(?<segment>.*), /api/internal/files/${segment}
         - id: chat-route
           uri: forward:/
           predicates:
             - Path=/api/chat/**
           filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: '#{@ipRateLimitKeyResolver}'
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 120
             - RewritePath=/api/chat/?(?<segment>.*), /api/internal/chat/${segment}
       globalcors:
         cors-configurations:

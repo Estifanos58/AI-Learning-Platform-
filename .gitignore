@@ -1,12 +1,44 @@
-<<<<<<< HEAD
-# Ignore build output directories
-target/
+# Build output directories
+**/target/
+**/build/
+.dist/
 
-# IDE and OS files
+# Java artifacts
+*.class
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache and compiled files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+
+# Logs
+*.log
+logs/
+
+# Environment and local config
+.env
+.env.*
+*.local
+
+# IDE/editor files
 .idea/
 .vscode/
-*.log
+*.iml
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
 *.tmp
-=======
-target/
->>>>>>> f3ba78d (Remove tracked target/ files and ignore them)
