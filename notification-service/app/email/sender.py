@@ -15,7 +15,7 @@ class EmailSender:
 
     def send_verification_email(self, to_email: str, username: str, verification_code: str) -> None:
         smtp_username = self._settings.smtp_username.strip()
-        smtp_password = self._settings.smtp_password.strip()
+        smtp_password = self._normalize_smtp_password(self._settings.smtp_password)
 
         if not smtp_username or not smtp_password:
             raise RuntimeError('SMTP credentials are missing. Set smtp_username and smtp_password.')
@@ -53,3 +53,13 @@ class EmailSender:
             server.ehlo()
             server.login(smtp_username, smtp_password)
             server.sendmail(from_address, [to_email], msg.as_string())
+
+    def _normalize_smtp_password(self, raw_password: str) -> str:
+        # Allow accidental inline comments in env values (common in docker env_file usage).
+        candidate = raw_password.split('#', 1)[0].strip()
+
+        if self._settings.smtp_host.strip().lower() == 'smtp.gmail.com':
+            # Gmail app passwords are 16 letters; users often paste them as 4-word chunks.
+            candidate = ''.join(candidate.split())
+
+        return candidate

@@ -40,6 +40,7 @@ class VerificationConsumer:
             bootstrap_servers=settings.kafka_bootstrap_servers,
             value_serializer=lambda payload: json.dumps(payload).encode('utf-8'),
         )
+        self._ensure_topic_exists(self._settings.kafka_topic_email_verification)
         self._ensure_topic_exists(self._settings.kafka_topic_email_failed)
 
     def start(self) -> None:
