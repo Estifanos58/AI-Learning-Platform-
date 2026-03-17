@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 
@@ -19,8 +20,8 @@ public class ChatRedisPublisher {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
-    public void publishNewChatroomWithMessage(MessageEntity message, UUID otherUserId) {
-        String channel = "ChatroomCreatedWithMessage." + otherUserId;
+    public void publishNewChatroomWithMessage(MessageEntity message, UUID subscriberUserId, UUID otherUserId) {
+        String channel = "ChatroomCreatedWithMessage." + subscriberUserId;
         Map<String, Object> payload = Map.of(
                 "message", messageToMap(message),
                 "chatroomId", message.getChatroomId().toString(),
@@ -110,6 +111,7 @@ public class ChatRedisPublisher {
     }
 
     private Map<String, Object> messageToMap(MessageEntity message) {
+        LocalDateTime createdAt = message.getCreatedAt() != null ? message.getCreatedAt() : LocalDateTime.now();
         return Map.of(
                 "id", message.getId().toString(),
                 "chatroomId", message.getChatroomId().toString(),
@@ -117,7 +119,7 @@ public class ChatRedisPublisher {
                 "aiModelId", message.getAiModelId() != null ? message.getAiModelId() : "",
                 "content", message.getContent() != null ? message.getContent() : "",
                 "fileId", message.getFileId() != null ? message.getFileId().toString() : "",
-                "createdAt", message.getCreatedAt().toString()
+                "createdAt", createdAt.toString()
         );
     }
 }

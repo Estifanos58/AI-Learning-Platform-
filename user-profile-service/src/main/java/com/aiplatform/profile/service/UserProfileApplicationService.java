@@ -81,6 +81,7 @@ public class UserProfileApplicationService {
         );
 
         List<UserProfile> visible = result.getContent().stream()
+            .filter(profile -> isNotRequestingUser(profile, principal))
                 .filter(profile -> canView(profile, principal))
                 .toList();
 
@@ -176,6 +177,10 @@ public class UserProfileApplicationService {
         }
 
         return false;
+    }
+
+    private boolean isNotRequestingUser(UserProfile target, AuthenticatedPrincipal principal) {
+        return principal == null || principal.userId() == null || !principal.userId().equals(target.getUserId());
     }
 
     private boolean hasText(String value) {

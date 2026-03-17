@@ -24,6 +24,7 @@ import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -173,7 +174,7 @@ public class ChatGrpcService extends ChatServiceGrpc.ChatServiceImplBase {
                 .setId(message.getId().toString())
                 .setChatroomId(message.getChatroomId().toString())
                 .setSenderUserId(message.getSenderUserId().toString())
-                .setCreatedAt(message.getCreatedAt().toString());
+                .setCreatedAt(message.getCreatedAt() != null ? message.getCreatedAt().toString() : LocalDateTime.now().toString());
         if (message.getAiModelId() != null) builder.setAiModelId(message.getAiModelId());
         if (message.getContent() != null) builder.setContent(message.getContent());
         if (message.getFileId() != null) builder.setFileId(message.getFileId().toString());

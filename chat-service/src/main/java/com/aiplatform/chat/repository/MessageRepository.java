@@ -9,5 +9,5 @@ import java.util.UUID;
 
 public interface MessageRepository extends JpaRepository<MessageEntity, UUID> {
 
-    Page<MessageEntity> findByChatroomIdOrderByCreatedAtDesc(UUID chatroomId, Pageable pageable);
+    Page<MessageEntity> findByChatroomIdOrderByCreatedAtAsc(UUID chatroomId, Pageable pageable);
 }

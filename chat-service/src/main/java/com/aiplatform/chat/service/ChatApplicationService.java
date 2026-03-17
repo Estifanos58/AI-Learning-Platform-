@@ -17,6 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,6 +51,9 @@ public class ChatApplicationService {
         }
         if (otherUserId == null && chatroomId == null && (aiModelId == null || aiModelId.isBlank())) {
             throw new InvalidChatOperationException("Must provide otherUserId, chatroomId, or aiModelId");
+        }
+        if (otherUserId != null && otherUserId.equals(userId)) {
+            throw new InvalidChatOperationException("Cannot create a direct chat with yourself");
         }
         if ((content == null || content.isBlank()) && fileId == null && (fileContent == null || fileContent.length == 0)) {
             throw new InvalidChatOperationException("Must provide content, fileId, or file");
@@ -114,18 +118,30 @@ public class ChatApplicationService {
                 .aiModelId(aiModelId != null && !aiModelId.isBlank() ? aiModelId : null)
                 .content(content)
                 .fileId(resolvedFileId)
+                .createdAt(LocalDateTime.now())
                 .build();
-        messageRepository.save(message);
+        messageRepository.saveAndFlush(message);
 
-        // Publish via Redis for WebSocket fanout
-        if (isNewChatroom && otherUserId != null) {
-            redisPublisher.publishNewChatroomWithMessage(message, otherUserId);
-        } else {
-            redisPublisher.publishNewMessage(message);
+        // Publish via Redis for WebSocket fanout (best-effort, must not rollback DB save)
+        try {
+            if (isNewChatroom && otherUserId != null) {
+                redisPublisher.publishNewChatroomWithMessage(message, otherUserId, userId);
+                redisPublisher.publishNewChatroomWithMessage(message, userId, otherUserId);
+            } else {
+                redisPublisher.publishNewMessage(message);
+            }
+        } catch (Exception e) {
+            log.error("Failed to publish message to Redis. messageId={}, chatroomId={}",
+                    message.getId(), message.getChatroomId(), e);
         }
 
-        // Publish to Kafka for AI processing
-        kafkaPublisher.publishAiMessageRequested(message);
+        // Publish to Kafka for AI processing (best-effort, must not rollback DB save)
+        try {
+            kafkaPublisher.publishAiMessageRequested(message);
+        } catch (Exception e) {
+            log.error("Failed to publish message to Kafka. messageId={}, chatroomId={}",
+                    message.getId(), message.getChatroomId(), e);
+        }
 
         log.info("Message sent. messageId={}, chatroomId={}, senderUserId={}, isNewChatroom={}",
                 message.getId(), message.getChatroomId(), userId, isNewChatroom);
@@ -151,7 +167,7 @@ public class ChatApplicationService {
         chatroomRepository.findById(chatroomId)
                 .orElseThrow(() -> new ChatroomNotFoundException("Chatroom not found"));
         validateMembership(chatroomId, userId);
-        return messageRepository.findByChatroomIdOrderByCreatedAtDesc(chatroomId, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
+        return messageRepository.findByChatroomIdOrderByCreatedAtAsc(chatroomId, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100)));
     }
 
     @Transactional(readOnly = true)
