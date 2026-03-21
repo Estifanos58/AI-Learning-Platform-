@@ -28,30 +28,6 @@ public class ChatKafkaPublisher {
         if (message.getAiModelId() == null || message.getAiModelId().isBlank()) {
             return;
         }
-        Map<String, Object> payload = Map.of(
-                "chatroomId", message.getChatroomId().toString(),
-                "messageId", message.getId().toString(),
-                "aiModelId", message.getAiModelId(),
-                "userId", message.getSenderUserId().toString(),
-                "content", message.getContent() != null ? message.getContent() : "",
-                "fileId", message.getFileId() != null ? message.getFileId().toString() : ""
-        );
-        try {
-            String json = objectMapper.writeValueAsString(payload);
-            kafkaTemplate.send(topicProperties.aiMessageTopic(), message.getChatroomId().toString(), json);
-            log.info("Published ai.message.requested. messageId={}", message.getId());
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize AI message event. messageId={}", message.getId(), e);
-        }
-
-        // Also publish v2 for RAG service
-        publishAiMessageRequestedV2(message);
-    }
-
-    public void publishAiMessageRequestedV2(MessageEntity message) {
-        if (message.getAiModelId() == null || message.getAiModelId().isBlank()) {
-            return;
-        }
         String v2Topic = topicProperties.aiMessageV2Topic();
         if (v2Topic == null || v2Topic.isBlank()) {
             return;
@@ -98,7 +74,7 @@ public class ChatKafkaPublisher {
         }
         Map<String, Object> payload = Map.of(
                 "event_id", UUID.randomUUID().toString(),
-                "event_type", "ai.message.cancelled.v1",
+                "event_type", "ai.message.cancelled.v2",
                 "timestamp", Instant.now().toString(),
                 "payload", Map.of(
                         "chatroom_id", chatroomId,
@@ -110,7 +86,7 @@ public class ChatKafkaPublisher {
         try {
             String json = objectMapper.writeValueAsString(payload);
             kafkaTemplate.send(topic, chatroomId, json);
-            log.info("Published ai.message.cancelled.v1. messageId={}", messageId);
+            log.info("Published ai.message.cancelled.v2. messageId={}", messageId);
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize cancellation event. messageId={}", messageId, e);
         }

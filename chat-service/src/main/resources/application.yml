@@ -26,7 +26,7 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
-      group-id: chat-service-rag-v1
+      group-id: chat-service-rag-v2
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -53,9 +53,9 @@ app:
       service-secret: ${APP_GRPC_FILE_SERVICE_SECRET:change-me-shared-secret}
   kafka:
     chat:
-      ai-message-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE:ai.message.requested}
+      ai-message-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE:ai.message.requested.v2}
       ai-message-v2-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_V2:ai.message.requested.v2}
-      ai-message-chunk-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_CHUNK:ai.message.chunk.v1}
-      ai-message-completed-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_COMPLETED:ai.message.completed.v1}
-      ai-message-failed-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_FAILED:ai.message.failed.v1}
-      ai-message-cancelled-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_CANCELLED:ai.message.cancelled.v1}
+      ai-message-chunk-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_CHUNK:ai.message.chunk.v2}
+      ai-message-completed-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_COMPLETED:ai.message.completed.v2}
+      ai-message-failed-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_FAILED:ai.message.failed.v2}
+      ai-message-cancelled-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE_CANCELLED:ai.message.cancelled.v2}

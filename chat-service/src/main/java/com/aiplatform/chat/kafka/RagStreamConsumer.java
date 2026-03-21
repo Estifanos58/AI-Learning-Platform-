@@ -1,6 +1,5 @@
 package com.aiplatform.chat.kafka;
 
-import com.aiplatform.chat.config.KafkaChatTopicProperties;
 import com.aiplatform.chat.service.ChatRedisPublisher;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,19 +31,18 @@ public class RagStreamConsumer {
     private final ChatRedisPublisher redisPublisher;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, String> kafkaTemplate;
-    private final KafkaChatTopicProperties kafkaChatTopicProperties;
 
     // Track per-message retry counts in memory (simple approach)
     private final ConcurrentHashMap<String, AtomicInteger> retryCounters = new ConcurrentHashMap<>();
 
     @KafkaListener(
             topics = {
-                "${app.kafka.chat.ai-message-chunk-topic:ai.message.chunk.v1}",
-                "${app.kafka.chat.ai-message-completed-topic:ai.message.completed.v1}",
-                "${app.kafka.chat.ai-message-failed-topic:ai.message.failed.v1}",
-                "${app.kafka.chat.ai-message-cancelled-topic:ai.message.cancelled.v1}"
+                "${app.kafka.chat.ai-message-chunk-topic:ai.message.chunk.v2}",
+                "${app.kafka.chat.ai-message-completed-topic:ai.message.completed.v2}",
+                "${app.kafka.chat.ai-message-failed-topic:ai.message.failed.v2}",
+                "${app.kafka.chat.ai-message-cancelled-topic:ai.message.cancelled.v2}"
             },
-            groupId = "${spring.kafka.consumer.group-id:chat-service-rag-v1}",
+            groupId = "${spring.kafka.consumer.group-id:chat-service-rag-v2}",
             containerFactory = "ragStreamKafkaListenerContainerFactory"
     )
     public void onRagEvent(ConsumerRecord<String, String> record, Acknowledgment ack) {
@@ -58,10 +56,10 @@ public class RagStreamConsumer {
             Map<String, Object> payload = extractPayload(event);
 
             switch (eventType) {
-                case "ai.message.chunk.v1" -> handleChunk(payload);
-                case "ai.message.completed.v1" -> handleCompleted(payload);
-                case "ai.message.failed.v1" -> handleFailed(payload);
-                case "ai.message.cancelled.v1" -> handleCancelled(payload);
+                case "ai.message.chunk.v2" -> handleChunk(payload);
+                case "ai.message.completed.v2" -> handleCompleted(payload);
+                case "ai.message.failed.v2" -> handleFailed(payload);
+                case "ai.message.cancelled.v2" -> handleCancelled(payload);
                 default -> log.warn("Unknown RAG event type: {}", eventType);
             }
 
