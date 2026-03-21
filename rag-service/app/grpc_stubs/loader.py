@@ -1,13 +1,28 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from pathlib import Path
 
 
-def ensure_ai_models_stubs() -> None:
+def _resolve_proto_root() -> Path:
+    here = Path(__file__).resolve().parent
+    for parent in [here, *here.parents]:
+        candidate = parent / "proto"
+        if (candidate / "ai_models.proto").exists():
+            return candidate
+    raise FileNotFoundError("Unable to locate proto directory containing ai_models.proto")
+
+
+def _alias_generated_pb2(proto_name: str) -> None:
+    module = importlib.import_module(f"app.grpc_stubs.{proto_name}_pb2")
+    sys.modules.setdefault(f"{proto_name}_pb2", module)
+
+
+def _ensure_stubs(proto_name: str) -> None:
     try:
-        importlib.import_module("app.grpc_stubs.ai_models_pb2")
-        importlib.import_module("app.grpc_stubs.ai_models_pb2_grpc")
+        _alias_generated_pb2(proto_name)
+        importlib.import_module(f"app.grpc_stubs.{proto_name}_pb2_grpc")
         return
     except ImportError:
         pass
@@ -15,19 +30,30 @@ def ensure_ai_models_stubs() -> None:
     from grpc_tools import protoc
 
     here = Path(__file__).resolve().parent
-    project_root = here.parents[2]
-    proto_file = project_root / "proto" / "ai_models.proto"
+    proto_root = _resolve_proto_root()
+    proto_file = proto_root / f"{proto_name}.proto"
     if not proto_file.exists():
         raise FileNotFoundError(f"Proto file not found: {proto_file}")
 
     result = protoc.main(
         [
             "grpc_tools.protoc",
-            f"-I{project_root / 'proto'}",
+            f"-I{proto_root}",
             f"--python_out={here}",
             f"--grpc_python_out={here}",
             str(proto_file),
         ]
     )
     if result != 0:
-        raise RuntimeError("Failed to generate gRPC stubs for ai_models.proto")
+        raise RuntimeError(f"Failed to generate gRPC stubs for {proto_name}.proto")
+
+    _alias_generated_pb2(proto_name)
+    importlib.import_module(f"app.grpc_stubs.{proto_name}_pb2_grpc")
+
+
+def ensure_ai_models_stubs() -> None:
+    _ensure_stubs("ai_models")
+
+
+def ensure_rag_stubs() -> None:
+    _ensure_stubs("rag")

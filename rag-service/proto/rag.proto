@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package rag.v1;
+
+option java_multiple_files = true;
+option java_package = "com.aiplatform.rag.proto";
+option java_outer_classname = "RagProto";
+
+service RagService {
+  rpc IngestFile(IngestFileRequest) returns (IngestFileResponse);
+  rpc RetrieveChunks(RetrieveChunksRequest) returns (RetrieveChunksResponse);
+  rpc DeleteFileVectors(DeleteFileVectorsRequest) returns (DeleteFileVectorsResponse);
+  rpc CancelGeneration(CancelGenerationRequest) returns (CancelGenerationResponse);
+  rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+  rpc CollectionInfo(CollectionInfoRequest) returns (CollectionInfoResponse);
+}
+
+message IngestFileRequest {
+  string file_id = 1;
+  string owner_id = 2;
+  string folder_id = 3;
+  string storage_path = 4;
+  string content_type = 5;
+  string file_name = 6;
+  repeated string tags = 7;
+}
+
+message IngestFileResponse {
+  string status = 1;
+  string file_id = 2;
+  int32 chunks_stored = 3;
+}
+
+message RetrieveChunksRequest {
+  string query = 1;
+  repeated string file_ids = 2;
+  int32 top_k = 3;
+}
+
+message RetrievedChunk {
+  double score = 1;
+  string file_id = 2;
+  int32 page_number = 3;
+  string chunk_text_preview = 4;
+}
+
+message RetrieveChunksResponse {
+  string query = 1;
+  int32 chunk_count = 2;
+  repeated RetrievedChunk chunks = 3;
+}
+
+message DeleteFileVectorsRequest {
+  string file_id = 1;
+}
+
+message DeleteFileVectorsResponse {
+  string status = 1;
+  string file_id = 2;
+}
+
+message CancelGenerationRequest {
+  string request_id = 1;
+}
+
+message CancelGenerationResponse {
+  string status = 1;
+  string request_id = 2;
+}
+
+message ListProvidersRequest {}
+
+message ListProvidersResponse {
+  repeated string available_providers = 1;
+}
+
+message CollectionInfoRequest {}
+
+message CollectionInfoResponse {
+  string collection = 1;
+  int64 vectors_count = 2;
+  string status = 3;
+  string error = 4;
+}

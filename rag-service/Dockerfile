@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY app/ ./app/
+COPY proto/ ./proto/
 
 # Non-root user for security
 RUN adduser --disabled-password --gecos "" raguser \

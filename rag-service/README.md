@@ -8,8 +8,8 @@ Enterprise-grade Retrieval-Augmented Generation (RAG) microservice for the AI Le
 rag-service/app/
 ├── main.py                    # FastAPI entry point + lifespan
 ├── config.py                  # Pydantic-settings configuration
-├── api/
-│   └── rag_controller.py      # REST endpoints (ingest, retrieve, cancel, etc.)
+├── grpc/
+│   └── ai_models_server.py    # gRPC server for AI model + RAG endpoints
 ├── orchestration/
 │   ├── planner_agent.py       # Selects agents for a query
 │   ├── workflow_builder.py    # Instantiates agent pipeline from plan
@@ -67,7 +67,7 @@ planner_agent → workflow_builder → [agents] → response_aggregator →
 response_streamer → Kafka (chunks + completion)
 ```
 
-### Cancellation (ai.message.cancelled.v1)
+### Cancellation (ai.message.cancelled.v2)
 ```
 Kafka event → PipelineExecutor.cancel(request_id) → abort pipeline → publish cancelled event
 ```
@@ -100,15 +100,13 @@ RAG_PORT=8087 uvicorn app.main:app --reload
 docker compose --profile rag up
 ```
 
-## API Endpoints
+## Service Endpoints
+
+RAG business operations are exposed via gRPC (`proto/rag.proto`) and consumed by `api-gateway`.
+
+HTTP endpoints are limited to operational probes:
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/rag/ingest` | Manually trigger file ingestion |
-| POST | `/api/rag/retrieve` | Retrieve relevant chunks |
-| DELETE | `/api/rag/vectors/{file_id}` | Remove vectors for a file |
-| POST | `/api/rag/cancel/{request_id}` | Cancel active generation |
-| GET | `/api/rag/providers` | List available LLM providers |
-| GET | `/api/rag/collection/info` | Qdrant collection stats |
 | GET | `/health` | Health check |
 | GET | `/ready` | Readiness probe |
