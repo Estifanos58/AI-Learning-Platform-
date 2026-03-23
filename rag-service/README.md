@@ -100,6 +100,23 @@ RAG_PORT=8087 uvicorn app.main:app --reload
 docker compose --profile rag up
 ```
 
+### Platform API key setup (secure local files)
+
+Store default platform keys in local files (already gitignored) so they are not committed:
+
+```bash
+rag-service/.secrets/rag_deepseek_api_key
+rag-service/.secrets/rag_gemini_api_key
+rag-service/.env.platform
+```
+
+The `rag-service` container reads keys from:
+
+- `DEEPSEEK_API_KEY_FILE=/run/secrets/rag_deepseek_api_key`
+- `GEMINI_API_KEY_FILE=/run/secrets/rag_gemini_api_key`
+
+If secret files are unavailable, `.env.platform` is used as fallback through Docker Compose `env_file`.
+
 ## Service Endpoints
 
 RAG business operations are exposed via gRPC (`proto/rag.proto`) and consumed by `api-gateway`.
