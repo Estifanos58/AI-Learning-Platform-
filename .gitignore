@@ -32,6 +32,7 @@ logs/
 **/.env
 **/.env.*
 *.local
+rag-service/.secrets/
 
 # IDE/editor files
 .idea/

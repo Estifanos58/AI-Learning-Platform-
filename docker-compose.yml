@@ -255,6 +255,8 @@ services:
       context: ./rag-service
       dockerfile: Dockerfile
     # profiles: ["rag"]
+    env_file:
+      - ./rag-service/.env.platform
     depends_on:
       kafka:
         condition: service_healthy
@@ -276,6 +278,8 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: rag_chunks_prod
       TEI_BASE_URL: http://tei:80
+      GEMINI_API_KEY_FILE: /run/secrets/rag_gemini_api_key
+      DEEPSEEK_API_KEY_FILE: /run/secrets/rag_deepseek_api_key
       FILE_STORAGE_ROOT_PATH: /data
       GRPC_FILE_SERVICE_ADDRESS: file-service:9092
       APP_GRPC_SERVICE_SECRET: change-me-shared-secret
@@ -283,6 +287,7 @@ services:
       RAG_DATABASE_URL: postgresql+asyncpg://postgres:postgres@rag-postgres:5432/rag_db
     volumes:
       - file-storage:/data:ro
+      - ./rag-service/.secrets:/run/secrets:ro
     ports:
       - "8087:8087"
     healthcheck:
