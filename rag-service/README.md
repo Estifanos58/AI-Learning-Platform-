@@ -81,6 +81,8 @@ Kafka event → PipelineExecutor.cancel(request_id) → abort pipeline → publi
 | `TEI_BASE_URL` | `http://localhost:8080` | HF TEI embedding service |
 | `OPENAI_API_KEY` | – | OpenAI API key |
 | `GEMINI_API_KEY` | – | Google Gemini API key |
+| `GROQ_API_KEY` | – | Groq API key |
+| `OPENROUTER_API_KEY` / `OPEN_ROUTER_API_KEY` | – | OpenRouter API key |
 | `DEEPSEEK_API_KEY` | – | DeepSeek API key |
 | `LOCAL_LLM_URL` | – | Ollama/vLLM base URL |
 | `FILE_STORAGE_ROOT_PATH` | `/data` | Shared file storage mount |
