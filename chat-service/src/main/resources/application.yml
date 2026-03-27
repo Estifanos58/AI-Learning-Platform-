@@ -44,13 +44,20 @@ grpc:
     file-service:
       address: ${GRPC_FILE_ADDRESS:static://localhost:9093}
       negotiationType: ${GRPC_FILE_NEGOTIATION:PLAINTEXT}
+    rag-service:
+      address: ${GRPC_RAG_ADDRESS:static://localhost:9097}
+      negotiationType: ${GRPC_RAG_NEGOTIATION:PLAINTEXT}
 
 app:
+  ai:
+    transport: ${APP_AI_TRANSPORT:kafka}
   grpc:
     chat:
       service-secret: ${APP_GRPC_CHAT_SERVICE_SECRET:change-me-shared-secret}
     file:
       service-secret: ${APP_GRPC_FILE_SERVICE_SECRET:change-me-shared-secret}
+    rag:
+      service-secret: ${APP_GRPC_RAG_SERVICE_SECRET:change-me-shared-secret}
   kafka:
     chat:
       ai-message-topic: ${APP_KAFKA_TOPIC_AI_MESSAGE:ai.message.requested.v2}

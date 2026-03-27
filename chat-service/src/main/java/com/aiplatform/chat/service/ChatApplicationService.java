@@ -12,6 +12,7 @@ import com.aiplatform.chat.repository.ChatroomRepository;
 import com.aiplatform.chat.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,11 @@ public class ChatApplicationService {
     private final MessageRepository messageRepository;
     private final ChatRedisPublisher redisPublisher;
     private final ChatKafkaPublisher kafkaPublisher;
+    private final RagExecutionClient ragExecutionClient;
     private final FileServiceClient fileServiceClient;
+
+    @Value("${app.ai.transport:kafka}")
+    private String aiTransport;
 
     @Transactional
     public SendMessageResult sendMessage(
@@ -135,12 +140,25 @@ public class ChatApplicationService {
                     message.getId(), message.getChatroomId(), e);
         }
 
-        // Publish to Kafka for AI processing (best-effort, must not rollback DB save)
-        try {
-            kafkaPublisher.publishAiMessageRequested(message);
-        } catch (Exception e) {
-            log.error("Failed to publish message to Kafka. messageId={}, chatroomId={}",
-                    message.getId(), message.getChatroomId(), e);
+        boolean useKafka = "kafka".equalsIgnoreCase(aiTransport) || "dual".equalsIgnoreCase(aiTransport);
+        boolean useGrpc = "grpc".equalsIgnoreCase(aiTransport) || "dual".equalsIgnoreCase(aiTransport);
+
+        if (useKafka) {
+            try {
+                kafkaPublisher.publishAiMessageRequested(message);
+            } catch (Exception e) {
+                log.error("Failed to publish message to Kafka. messageId={}, chatroomId={}",
+                        message.getId(), message.getChatroomId(), e);
+            }
+        }
+
+        if (useGrpc) {
+            try {
+                ragExecutionClient.executeChat(message, correlationId);
+            } catch (Exception e) {
+                log.error("Failed to submit AI execution via gRPC. messageId={}, chatroomId={}",
+                        message.getId(), message.getChatroomId(), e);
+            }
         }
 
         log.info("Message sent. messageId={}, chatroomId={}, senderUserId={}, isNewChatroom={}",
