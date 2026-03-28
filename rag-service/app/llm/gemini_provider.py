@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import AsyncIterator
 
-import httpx
-
 from app.config import get_settings
 from app.llm.base_provider import BaseLLMProvider, LLMChunk, LLMRequest, LLMUsage
 
@@ -40,65 +38,48 @@ class GeminiProvider(BaseLLMProvider):
 
         try:
             try:
-                import google.generativeai as genai  # type: ignore[import]
+                from google import genai  # type: ignore[import]
+                from google.genai import types  # type: ignore[import]
 
-                genai.configure(api_key=api_key)
-                gmodel = genai.GenerativeModel(model)
-                prompt = "\n".join(
-                    f"{m.role.upper()}: {m.content}" for m in request.messages
-                )
-                response = gmodel.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        max_output_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                    ),
-                    stream=True,
+                client = genai.Client(api_key=api_key)
+
+                system_messages = [m.content for m in request.messages if m.role == "system" and m.content]
+                user_and_assistant = [m for m in request.messages if m.role != "system" and m.content]
+
+                contents: list[types.Content] = []
+                for message in user_and_assistant:
+                    # Gemini expects alternating "user" and "model" roles.
+                    role = "model" if message.role == "assistant" else "user"
+                    contents.append(
+                        types.Content(
+                            role=role,
+                            parts=[types.Part.from_text(text=message.content)],
+                        )
+                    )
+
+                config_kwargs: dict[str, object] = {
+                    "max_output_tokens": request.max_tokens,
+                    "temperature": request.temperature,
+                }
+                if system_messages:
+                    config_kwargs["system_instruction"] = "\n\n".join(system_messages)
+
+                generate_content_config = types.GenerateContentConfig(**config_kwargs)
+
+                response = client.models.generate_content_stream(
+                    model=model,
+                    contents=contents,
+                    config=generate_content_config,
                 )
                 for chunk in response:
                     text = chunk.text or ""
-                    yield LLMChunk(delta=text, done=False)
+                    if text:
+                        yield LLMChunk(delta=text, done=False)
                 yield LLMChunk(delta="", done=True, finish_reason="stop")
                 return
             except ModuleNotFoundError:
-                prompt = "\n".join(
-                    f"{m.role.upper()}: {m.content}" for m in request.messages
-                )
-                endpoint_model = (
-                    model
-                    if model.startswith("models/")
-                    else f"models/{model}"
-                )
-                url = f"https://generativelanguage.googleapis.com/v1beta/{endpoint_model}:generateContent"
-                params = {"key": api_key}
-                payload = {
-                    "contents": [
-                        {
-                            "role": "user",
-                            "parts": [{"text": prompt}],
-                        }
-                    ],
-                    "generationConfig": {
-                        "maxOutputTokens": request.max_tokens,
-                        "temperature": request.temperature,
-                    },
-                }
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(url, params=params, json=payload)
-                    response.raise_for_status()
-
-                data = response.json()
-                candidates = data.get("candidates") or []
-                if not candidates:
-                    yield LLMChunk(delta="", done=True, finish_reason="error")
-                    return
-
-                content = candidates[0].get("content", {})
-                parts = content.get("parts", [])
-                text = "".join(part.get("text", "") for part in parts if isinstance(part, dict))
-
-                yield LLMChunk(delta=text, done=False)
-                yield LLMChunk(delta="", done=True, finish_reason="stop")
+                log.error("google-genai is not installed. Install it with: pip install google-genai")
+                yield LLMChunk(delta="", done=True, finish_reason="error")
         except Exception as exc:  # noqa: BLE001
             log.error("Gemini streaming error: %s", exc)
             yield LLMChunk(delta="", done=True, finish_reason="error")

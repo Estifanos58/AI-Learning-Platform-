@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.model_definition import ModelDefinition
@@ -31,6 +32,19 @@ class EndpointCandidate:
     endpoint_last_used_at: object | None
 
 
+class DuplicateModelDefinitionError(Exception):
+    """Raised when creating a model definition with an existing model name."""
+
+
+def _is_model_name_unique_violation(exc: IntegrityError) -> bool:
+    text = str(exc).lower()
+    return (
+        "ix_model_definitions_model_name" in text
+        or "model_definitions_model_name_key" in text
+        or "unique constraint failed: model_definitions.model_name" in text
+    )
+
+
 class ModelOrchestrationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -39,6 +53,15 @@ class ModelOrchestrationRepository:
         return await self.session.get(ModelDefinition, model_id)
 
     async def list_models(self) -> list[dict[str, object]]:
+        provider_counts = (
+            select(
+                ModelProvider.model_definition_id.label("model_definition_id"),
+                func.count(ModelProvider.id).label("provider_count"),
+            )
+            .group_by(ModelProvider.model_definition_id)
+            .subquery()
+        )
+
         stmt = (
             select(
                 ModelDefinition.id,
@@ -47,16 +70,11 @@ class ModelOrchestrationRepository:
                 ModelDefinition.context_length,
                 ModelDefinition.capabilities,
                 ModelDefinition.active,
-                func.count(ModelProvider.id).label("provider_count"),
+                func.coalesce(provider_counts.c.provider_count, 0).label("provider_count"),
             )
-            .outerjoin(ModelProvider, ModelProvider.model_definition_id == ModelDefinition.id)
-            .group_by(
-                ModelDefinition.id,
-                ModelDefinition.model_name,
-                ModelDefinition.family,
-                ModelDefinition.context_length,
-                ModelDefinition.capabilities,
-                ModelDefinition.active,
+            .outerjoin(
+                provider_counts,
+                provider_counts.c.model_definition_id == ModelDefinition.id,
             )
             .order_by(ModelDefinition.model_name.asc())
         )
@@ -82,6 +100,11 @@ class ModelOrchestrationRepository:
         capabilities: dict[str, object],
         active: bool,
     ) -> ModelDefinition:
+        exists_stmt = select(ModelDefinition.id).where(ModelDefinition.model_name == model_name)
+        existing_id = (await self.session.execute(exists_stmt)).scalar_one_or_none()
+        if existing_id is not None:
+            raise DuplicateModelDefinitionError(f"Model name '{model_name}' already exists")
+
         model = ModelDefinition(
             model_name=model_name,
             family=family,
@@ -90,7 +113,15 @@ class ModelOrchestrationRepository:
             active=active,
         )
         self.session.add(model)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            if _is_model_name_unique_violation(exc):
+                raise DuplicateModelDefinitionError(
+                    f"Model name '{model_name}' already exists"
+                ) from exc
+            raise
         await self.session.refresh(model)
         return model
 

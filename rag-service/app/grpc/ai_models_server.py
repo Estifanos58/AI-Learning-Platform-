@@ -17,7 +17,10 @@ from app.ingestion.extractor import TextExtractor
 from app.ingestion.file_loader import FileLoader
 from app.llm.provider_executor import ProviderExecutor
 from app.orchestration.pipeline_executor import PipelineExecutor
-from app.repositories.model_orchestration_repository import ModelOrchestrationRepository
+from app.repositories.model_orchestration_repository import (
+    DuplicateModelDefinitionError,
+    ModelOrchestrationRepository,
+)
 from app.retrieval.reranker import Reranker
 from app.retrieval.vector_search import VectorSearch
 from app.security.encryption import encrypt_key
@@ -77,7 +80,9 @@ class _AiModelService:
 
     async def CreateModelDefinition(self, request, context):  # noqa: N802
         await _require_service_auth(context)
-        if not request.model_name or not request.family:
+        model_name = (request.model_name or "").strip()
+        family = (request.family or "").strip()
+        if not model_name or not family:
             await context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT,
                 "model_name and family are required",
@@ -90,13 +95,16 @@ class _AiModelService:
 
         async with AsyncSessionLocal() as session:
             repo = ModelOrchestrationRepository(session)
-            model = await repo.create_model_definition(
-                model_name=request.model_name,
-                family=request.family,
-                context_length=max(0, int(request.context_length or 0)),
-                capabilities=capabilities if isinstance(capabilities, dict) else {},
-                active=bool(request.active),
-            )
+            try:
+                model = await repo.create_model_definition(
+                    model_name=model_name,
+                    family=family,
+                    context_length=max(0, int(request.context_length or 0)),
+                    capabilities=capabilities if isinstance(capabilities, dict) else {},
+                    active=bool(request.active),
+                )
+            except DuplicateModelDefinitionError as exc:
+                await context.abort(grpc.StatusCode.ALREADY_EXISTS, str(exc))
 
         pb2 = importlib.import_module("app.grpc_stubs.ai_models_pb2")
         dto = pb2.AiModelDto(
