@@ -36,6 +36,7 @@ class RedisStreamSink(StreamSink):
         }
         try:
             client = await self._client()
+            log.info("Publishing AI event to Redis stream_key=%s event_type=%s payload=%s", stream_key, fields.get("event_type"), fields.get("payload"))
             await client.xadd(
                 stream_key,
                 fields=fields,
