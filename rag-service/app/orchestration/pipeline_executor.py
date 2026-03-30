@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any, Awaitable, Callable, Dict
 
 from app.agents.base_agent import AgentContext
 from app.llm.model_orchestrator import EndpointSelection, ModelOrchestrator
@@ -23,6 +23,12 @@ log = logging.getLogger(__name__)
 
 # In-process cancellation registry (request_id → Event)
 _CANCELLATION_REGISTRY: Dict[str, asyncio.Event] = {}
+
+PartialPersistHook = Callable[[str, str], Awaitable[None]]
+CompletionHook = Callable[[str, str, str], Awaitable[None]]
+FailureHook = Callable[[str, str], Awaitable[None]]
+CancelledHook = Callable[[str], Awaitable[None]]
+CancelledProbe = Callable[[str], Awaitable[bool]]
 
 
 class PipelineExecutor:
@@ -48,7 +54,14 @@ class PipelineExecutor:
         self._meter = TokenMeter()
 
     async def execute(self, payload: Dict[str, Any]) -> None:
-        request_id = payload.get("message_id") or payload.get("messageId") or str(uuid.uuid4())
+        request_id = (
+            payload.get("request_id")
+            or payload.get("requestId")
+            or payload.get("message_id")
+            or payload.get("messageId")
+            or str(uuid.uuid4())
+        )
+        message_id = payload.get("message_id") or payload.get("messageId") or request_id
         chatroom_id = payload.get("chatroom_id") or payload.get("chatroomId", "")
         user_id = payload.get("user_id") or payload.get("userId", "")
         model_id = payload.get("ai_model_id") or payload.get("aiModelId", "")
@@ -57,6 +70,11 @@ class PipelineExecutor:
         options = payload.get("options", {})
         context_window = payload.get("context_window", [])
         max_retries = int(options.get("max_endpoint_retries", 3))
+        on_partial_persist: PartialPersistHook | None = payload.get("on_partial_persist")
+        on_completed: CompletionHook | None = payload.get("on_completed")
+        on_failed: FailureHook | None = payload.get("on_failed")
+        on_cancelled: CancelledHook | None = payload.get("on_cancelled")
+        is_cancelled: CancelledProbe | None = payload.get("is_cancelled")
         if not model_id:
             raise RuntimeError("ai_model_id is required")
 
@@ -77,6 +95,7 @@ class PipelineExecutor:
         try:
             await self._run_pipeline(
                 request_id=request_id,
+                message_id=message_id,
                 chatroom_id=chatroom_id,
                 user_id=user_id,
                 model_id=model_id,
@@ -87,21 +106,29 @@ class PipelineExecutor:
                 candidate_endpoints=candidate_endpoints,
                 max_retries=max_retries,
                 cancel_event=cancel_event,
+                on_partial_persist=on_partial_persist,
+                on_completed=on_completed,
+                on_failed=on_failed,
+                is_cancelled=is_cancelled,
             )
         except asyncio.CancelledError:
             await self._streamer.publish_cancelled(
                 chatroom_id=chatroom_id,
-                message_id=request_id,
+                message_id=message_id,
                 request_id=request_id,
             )
+            if on_cancelled is not None:
+                await on_cancelled(request_id)
         except Exception as exc:  # noqa: BLE001
             log.error("Pipeline failed for request_id=%s: %s", request_id, exc)
             await self._streamer.publish_failed(
                 chatroom_id=chatroom_id,
-                message_id=request_id,
+                message_id=message_id,
                 request_id=request_id,
                 error=str(exc),
             )
+            if on_failed is not None:
+                await on_failed(request_id, str(exc))
         finally:
             _CANCELLATION_REGISTRY.pop(request_id, None)
             latency_ms = int((time.monotonic() - start_ts) * 1000)
@@ -112,6 +139,7 @@ class PipelineExecutor:
     async def _run_pipeline(
         self,
         request_id: str,
+        message_id: str,
         chatroom_id: str,
         user_id: str,
         model_id: str,
@@ -122,8 +150,12 @@ class PipelineExecutor:
         candidate_endpoints: list[EndpointSelection],
         max_retries: int,
         cancel_event: asyncio.Event,
+        on_partial_persist: PartialPersistHook | None,
+        on_completed: CompletionHook | None,
+        on_failed: FailureHook | None,
+        is_cancelled: CancelledProbe | None,
     ) -> None:
-        self._check_cancel(cancel_event)
+        await self._check_cancel(cancel_event, request_id, is_cancelled)
 
         # 1-2. Authorize file IDs + vector search + rerank (only when files attached)
         chunks = []
@@ -131,12 +163,12 @@ class PipelineExecutor:
             allowed_file_ids = await self._perm_checker.get_allowed_file_ids(
                 user_id=user_id, file_ids=file_ids
             )
-            self._check_cancel(cancel_event)
+            await self._check_cancel(cancel_event, request_id, is_cancelled)
 
             raw_chunks = await self._search.search(question, allowed_file_ids)
-            self._check_cancel(cancel_event)
+            await self._check_cancel(cancel_event, request_id, is_cancelled)
             chunks = await self._reranker.rerank(question, raw_chunks)
-            self._check_cancel(cancel_event)
+            await self._check_cancel(cancel_event, request_id, is_cancelled)
         else:
             log.info(
                 "No file_ids attached for request_id=%s; skipping vector search",
@@ -159,12 +191,12 @@ class PipelineExecutor:
             options={**options, "context_window": context_window},
         )
         agents = self._builder.build(plan)
-        self._check_cancel(cancel_event)
+        await self._check_cancel(cancel_event, request_id, is_cancelled)
 
         # 4. Execute agents (sequential with endpoint retries)
         results = []
         for agent in agents:
-            self._check_cancel(cancel_event)
+            await self._check_cancel(cancel_event, request_id, is_cancelled)
             agent_result = None
             last_exc: Exception | None = None
 
@@ -204,18 +236,28 @@ class PipelineExecutor:
 
         # 5. Aggregate
         aggregated = self._aggregator.aggregate(results)
-        self._check_cancel(cancel_event)
+        await self._check_cancel(cancel_event, request_id, is_cancelled)
         full_text = aggregated["content"]
         citations = aggregated["citations"]
         chunk_size = 200
+        persist_flush_chars = int(options.get("persist_flush_chars", 800))
         seq = 0
+        persisted_buffer = ""
+        last_persisted_len = 0
 
         for i in range(0, len(full_text), chunk_size):
-            self._check_cancel(cancel_event)
+            await self._check_cancel(cancel_event, request_id, is_cancelled)
             delta = full_text[i : i + chunk_size]
+            persisted_buffer += delta
+            if (
+                on_partial_persist is not None
+                and (len(persisted_buffer) - last_persisted_len) >= max(100, persist_flush_chars)
+            ):
+                await on_partial_persist(message_id, persisted_buffer)
+                last_persisted_len = len(persisted_buffer)
             await self._streamer.publish_chunk(
                 chatroom_id=chatroom_id,
-                message_id=request_id,
+                message_id=message_id,
                 request_id=request_id,
                 sequence=seq,
                 content_delta=delta,
@@ -227,9 +269,13 @@ class PipelineExecutor:
         # 7. Publish completion
         model_used = candidate_endpoints[0].provider_model_name if candidate_endpoints else model_id
         usage = await self._meter.estimate(question, full_text, model_used)
+        if on_partial_persist is not None:
+            await on_partial_persist(message_id, full_text)
+        if on_completed is not None:
+            await on_completed(request_id, message_id, full_text)
         await self._streamer.publish_completed(
             chatroom_id=chatroom_id,
-            message_id=request_id,
+            message_id=message_id,
             request_id=request_id,
             final_content=full_text,
             citations=citations,
@@ -245,6 +291,12 @@ class PipelineExecutor:
             log.info("Cancellation signal set for request_id=%s", request_id)
 
     @staticmethod
-    def _check_cancel(event: asyncio.Event) -> None:
+    async def _check_cancel(
+        event: asyncio.Event,
+        request_id: str,
+        is_cancelled: CancelledProbe | None,
+    ) -> None:
         if event.is_set():
             raise asyncio.CancelledError("Pipeline cancelled by user request")
+        if is_cancelled is not None and await is_cancelled(request_id):
+            raise asyncio.CancelledError("Pipeline cancelled by persisted execution state")
