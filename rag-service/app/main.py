@@ -28,6 +28,7 @@ from app.grpc.ai_models_server import AiModelsGrpcServer
 from app.ingestion.kafka_consumer import IngestionConsumer
 from app.storage.qdrant_client import get_qdrant_client
 from app.streaming.response_streamer import get_producer
+from app.workers.direct_execution_runtime import get_direct_execution_worker
 from app.workers.quota_reset_worker import QuotaResetWorker
 
 settings = get_settings()
@@ -77,6 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     producer = None
     grpc_server = None
     quota_worker = QuotaResetWorker()
+    direct_execution_worker = get_direct_execution_worker()
     if settings.stream_backend.lower() in {"kafka", "dual"}:
         try:
             producer = get_producer()
@@ -92,6 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning("RAG gRPC server failed to start: %s", exc)
 
     quota_worker.start()
+    direct_execution_worker.start()
 
     # Start Kafka consumer workers (background threads)
     consumer: IngestionConsumer | None = None
@@ -113,6 +116,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         producer.stop()
     if grpc_server:
         await grpc_server.stop()
+    await direct_execution_worker.stop()
     await quota_worker.stop()
 
 

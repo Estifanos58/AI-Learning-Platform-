@@ -17,6 +17,7 @@ from app.ingestion.extractor import TextExtractor
 from app.ingestion.file_loader import FileLoader
 from app.llm.provider_executor import ProviderExecutor
 from app.orchestration.pipeline_executor import PipelineExecutor
+from app.repositories.direct_ai_repository import DirectAIRepository
 from app.repositories.model_orchestration_repository import (
     DuplicateModelDefinitionError,
     ModelOrchestrationRepository,
@@ -26,6 +27,8 @@ from app.retrieval.vector_search import VectorSearch
 from app.security.encryption import encrypt_key
 from app.security.user_permission_checker import UserPermissionChecker
 from app.storage.qdrant_client import get_qdrant_client
+from app.streaming.response_streamer import ResponseStreamer
+from app.workers.direct_execution_runtime import get_direct_execution_worker
 
 log = logging.getLogger(__name__)
 settings = get_settings()
@@ -239,6 +242,10 @@ class _AiModelService:
 
 
 class _RagService:
+    def __init__(self) -> None:
+        self._direct_repo = DirectAIRepository()
+        self._streamer = ResponseStreamer()
+
     async def IngestFile(self, request, context):  # noqa: N802
         user_id = await _require_service_auth(context)
         if not request.file_id:
@@ -346,6 +353,8 @@ class _RagService:
         prompt = (request.prompt or "").strip()
         if not prompt:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "prompt is required")
+        if not (request.ai_model_id or "").strip():
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "ai_model_id is required")
 
         pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
         request_id = (request.request_id or request.message_id or str(uuid.uuid4())).strip()
@@ -354,33 +363,232 @@ class _RagService:
         if request.mode == pb2.CHAT:
             mode = "chat"
 
+        try:
+            chatroom = await self._direct_repo.resolve_or_create_chatroom(user_id, request.chatroom_id or None)
+            await self._direct_repo.set_chatroom_title_if_empty(chatroom.id, prompt)
+            _, assistant_message = await self._direct_repo.create_user_and_assistant_messages(
+                chatroom_id=chatroom.id,
+                user_prompt=prompt,
+            )
+        except PermissionError:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Chatroom not found")
+
+        stream_key = f"stream:ai:{request_id}"
+        await self._direct_repo.create_execution(
+            request_id=request_id,
+            chatroom_id=chatroom.id,
+            message_id=assistant_message.id,
+            user_id=user_id,
+            stream_key=stream_key,
+        )
+
         payload = {
-            "message_id": request.message_id or request_id,
-            "chatroom_id": request.chatroom_id,
-            "user_id": request.user_id or user_id,
+            "request_id": request_id,
+            "message_id": assistant_message.id,
+            "chatroom_id": chatroom.id,
+            "user_id": user_id,
             "ai_model_id": request.ai_model_id,
             "content": prompt,
             "file_ids": list(request.file_ids),
             "options": dict(request.options),
             "mode": mode,
         }
+        await get_direct_execution_worker().enqueue(payload)
 
-        executor = PipelineExecutor()
-        import asyncio
-
-        asyncio.create_task(executor.execute(payload))
-
-        stream_key = (
-            f"stream:chat:{request.chatroom_id}"
-            if request.chatroom_id
-            else f"stream:ai:{request_id}"
-        )
         return pb2.ExecuteAcceptedResponse(
             status="accepted",
             request_id=request_id,
             stream_key=stream_key,
             accepted=True,
+            chatroom_id=chatroom.id,
+            message_id=assistant_message.id,
         )
+
+    async def GetExecution(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        if not request.execution_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "execution_id is required")
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        execution = await self._direct_repo.get_execution_for_user(request.execution_id, user_id)
+        if execution is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Execution not found")
+
+        return pb2.GetExecutionResponse(
+            execution_id=execution.request_id,
+            chatroom_id=execution.chatroom_id,
+            message_id=execution.message_id,
+            status=execution.status,
+            error=execution.error or "",
+            created_at=_format_dt(execution.created_at),
+            completed_at=_format_dt(execution.completed_at),
+            stream_key=execution.stream_key,
+        )
+
+    async def CancelExecution(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        if not request.execution_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "execution_id is required")
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        execution = await self._direct_repo.get_execution_for_user(request.execution_id, user_id)
+        if execution is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Execution not found")
+
+        await self._direct_repo.cancel_execution(request.execution_id)
+        PipelineExecutor.cancel(request.execution_id)
+        await self._streamer.publish_cancelled(
+            chatroom_id=execution.chatroom_id,
+            message_id=execution.message_id,
+            request_id=execution.request_id,
+        )
+        return pb2.CancelExecutionResponse(
+            status="cancelled",
+            execution_id=request.execution_id,
+        )
+
+    async def GetExecutionStreamBootstrap(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        if not request.execution_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "execution_id is required")
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        execution = await self._direct_repo.get_execution_for_user(request.execution_id, user_id)
+        if execution is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Execution not found")
+
+        message = await self._direct_repo.get_message(execution.message_id)
+        partial_content = message.content if message is not None else ""
+        final_content = partial_content if execution.status == "COMPLETED" else ""
+
+        return pb2.GetExecutionStreamBootstrapResponse(
+            status=execution.status,
+            execution_id=execution.request_id,
+            chatroom_id=execution.chatroom_id,
+            message_id=execution.message_id,
+            stream_key=execution.stream_key,
+            partial_content=partial_content,
+            final_content=final_content,
+            error=execution.error or "",
+        )
+
+    async def ListChatrooms(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        rooms, total = await self._direct_repo.list_chatrooms(
+            user_id=user_id,
+            page=max(0, int(request.page or 0)),
+            size=max(1, int(request.size or 20)),
+        )
+        return pb2.ListChatroomsResponse(
+            chatrooms=[
+                pb2.ChatroomDto(
+                    id=room.id,
+                    title=room.title or "",
+                    created_at=_format_dt(room.created_at),
+                    updated_at=_format_dt(room.updated_at),
+                )
+                for room in rooms
+            ],
+            total=total,
+        )
+
+    async def GetChatroom(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        if not request.chatroom_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "chatroom_id is required")
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        room = await self._direct_repo.get_chatroom_for_user(user_id, request.chatroom_id)
+        if room is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Chatroom not found")
+        messages = await self._direct_repo.list_all_chatroom_messages(user_id, request.chatroom_id)
+
+        return pb2.GetChatroomResponse(
+            chatroom=pb2.ChatroomDto(
+                id=room.id,
+                title=room.title or "",
+                created_at=_format_dt(room.created_at),
+                updated_at=_format_dt(room.updated_at),
+            ),
+            messages=[
+                pb2.MessageDto(
+                    id=msg.id,
+                    chatroom_id=msg.chatroom_id,
+                    role=msg.role,
+                    content=msg.content,
+                    status=msg.status,
+                    created_at=_format_dt(msg.created_at),
+                    updated_at=_format_dt(msg.updated_at),
+                )
+                for msg in messages
+            ],
+        )
+
+    async def ListChatroomMessages(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        if not request.chatroom_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "chatroom_id is required")
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        try:
+            messages, total = await self._direct_repo.list_chatroom_messages(
+                user_id=user_id,
+                chatroom_id=request.chatroom_id,
+                page=max(0, int(request.page or 0)),
+                size=max(1, int(request.size or 50)),
+            )
+        except PermissionError:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Chatroom not found")
+
+        return pb2.ListChatroomMessagesResponse(
+            messages=[
+                pb2.MessageDto(
+                    id=msg.id,
+                    chatroom_id=msg.chatroom_id,
+                    role=msg.role,
+                    content=msg.content,
+                    status=msg.status,
+                    created_at=_format_dt(msg.created_at),
+                    updated_at=_format_dt(msg.updated_at),
+                )
+                for msg in messages
+            ],
+            total=total,
+        )
+
+    async def UpdateChatroomTitle(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        if not request.chatroom_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "chatroom_id is required")
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        try:
+            room = await self._direct_repo.update_chatroom_title(user_id, request.chatroom_id, request.title)
+        except ValueError:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "title is required")
+        except PermissionError:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Chatroom not found")
+
+        return pb2.ChatroomDto(
+            id=room.id,
+            title=room.title or "",
+            created_at=_format_dt(room.created_at),
+            updated_at=_format_dt(room.updated_at),
+        )
+
+    async def DeleteChatroom(self, request, context):  # noqa: N802
+        user_id = await _require_service_auth(context)
+        if not request.chatroom_id:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "chatroom_id is required")
+        pb2 = importlib.import_module("app.grpc_stubs.rag_pb2")
+
+        try:
+            await self._direct_repo.delete_chatroom(user_id, request.chatroom_id)
+        except PermissionError:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "Chatroom not found")
+        return pb2.DeleteChatroomResponse(status="deleted", chatroom_id=request.chatroom_id)
 
     async def ListProviders(self, request, context):  # noqa: N802
         await _require_service_auth(context)

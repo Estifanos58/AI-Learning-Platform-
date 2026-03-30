@@ -20,13 +20,6 @@ def _alias_generated_pb2(proto_name: str) -> None:
 
 
 def _ensure_stubs(proto_name: str) -> None:
-    try:
-        _alias_generated_pb2(proto_name)
-        importlib.import_module(f"app.grpc_stubs.{proto_name}_pb2_grpc")
-        return
-    except ImportError:
-        pass
-
     from grpc_tools import protoc
 
     here = Path(__file__).resolve().parent
@@ -34,6 +27,21 @@ def _ensure_stubs(proto_name: str) -> None:
     proto_file = proto_root / f"{proto_name}.proto"
     if not proto_file.exists():
         raise FileNotFoundError(f"Proto file not found: {proto_file}")
+
+    generated_pb2 = here / f"{proto_name}_pb2.py"
+    generated_pb2_grpc = here / f"{proto_name}_pb2_grpc.py"
+    has_generated = generated_pb2.exists() and generated_pb2_grpc.exists()
+    proto_mtime = proto_file.stat().st_mtime
+    generated_up_to_date = has_generated and generated_pb2.stat().st_mtime >= proto_mtime
+
+    if generated_up_to_date:
+        try:
+            _alias_generated_pb2(proto_name)
+            importlib.import_module(f"app.grpc_stubs.{proto_name}_pb2_grpc")
+            return
+        except ImportError:
+            # Fall through to regeneration if generated modules cannot be imported.
+            pass
 
     result = protoc.main(
         [

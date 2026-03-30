@@ -13,6 +13,9 @@ from sqlalchemy.ext.asyncio import (
 from app.config import get_settings
 from app.db.base import Base
 from app.models.ai_model import AIModel  # noqa: F401
+from app.models.ai_execution import AIExecution  # noqa: F401
+from app.models.chat_room import ChatRoom  # noqa: F401
+from app.models.message import Message  # noqa: F401
 from app.models.model_definition import ModelDefinition  # noqa: F401
 from app.models.model_endpoint import ModelEndpoint  # noqa: F401
 from app.models.model_provider import ModelProvider  # noqa: F401
