@@ -39,7 +39,7 @@ import reactor.core.scheduler.Schedulers;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/chatrooms")
+@RequestMapping("/api/internal/chatrooms")
 public class GatewayDirectChatroomController {
 
     private static final Metadata.Key<String> CORRELATION_ID_KEY = Metadata.Key.of("x-correlation-id", Metadata.ASCII_STRING_MARSHALLER);
