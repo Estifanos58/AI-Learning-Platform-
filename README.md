@@ -3,7 +3,7 @@
 ## Overview
 AI Learning Platform backend is a microservices system for authentication, user profile management, file lifecycle, conversational chat, AI retrieval-augmented generation (RAG), and asynchronous notifications. The platform uses gRPC for internal synchronous communication, Kafka for asynchronous event-driven workflows, PostgreSQL for transactional state, Redis for realtime fan-out/rate-limiting, and Qdrant for vector retrieval.
 
-## Full System Architecture Diagram (MANDATORY)
+## Full System Architecture Diagram 
 ```mermaid
 graph TD
     Client[Web/Mobile Client] --> APIGateway[API Gateway]
@@ -45,7 +45,7 @@ graph TD
 | notification-service | Email verification consumer and SMTP delivery | FastAPI + Kafka + SMTP | No persistent DB |
 | proto | Shared protobuf contracts for all gRPC service APIs | Protocol Buffers | No DB |
 
-## Service Communication Diagram (MANDATORY)
+## Service Communication Diagram
 ```mermaid
 graph LR
     APIGateway -->|gRPC| AuthService
@@ -69,7 +69,7 @@ graph LR
     RagService -->|Redis stream optional| Redis
 ```
 
-## Data Architecture (MANDATORY)
+## Data Architecture 
 - Per-service ownership:
   - Each business service owns its own persistence boundary and schema.
   - Cross-service references are logical identifiers (for example `user_id`, `file_id`) rather than foreign keys across databases.
@@ -83,7 +83,7 @@ graph LR
   - Chat and RAG exchange AI lifecycle events through Kafka topics.
   - Gateway and chat rely on Redis for low-latency event fan-out.
 
-## High-Level Data Flow Diagram (MANDATORY)
+## High-Level Data Flow Diagram 
 ```mermaid
 graph TD
     User --> APIGateway
