@@ -1,34 +1,23 @@
 # API Gateway
 
 ## Overview
-The API Gateway is the public entry point for the AI Learning Platform backend. It exposes HTTP and WebSocket interfaces, validates JWT access tokens, applies rate limits and request sanitization, and translates client-facing REST calls into internal gRPC requests to downstream services.
+The API Gateway is the single public entrypoint for the platform backend. It accepts client HTTP traffic, enforces edge security and throttling, then proxies requests to internal gRPC services.
 
 ## Responsibilities
-- Expose public REST APIs for auth, profile, file, chat, RAG, and AI model operations.
-- Enforce authentication and authorization at the edge via JWT validation.
-- Apply per-route rate limiting using Redis-backed Spring Cloud Gateway filters.
-- Sanitize AI prompt payloads for high-risk endpoints before forwarding.
-- Bridge real-time events to clients over SSE and WebSocket from Redis channels/streams.
-- Propagate request metadata (user id, correlation id, service secret) to gRPC backends.
+- Route external APIs under `/api/auth`, `/api/profile`, `/api/files`, `/api/chat`, `/api/rag`, and `/api/ai`.
+- Enforce JWT validation and route-level access policy before internal calls.
+- Apply Redis-backed rate limits for high-risk and high-throughput routes.
+- Propagate service metadata to downstream gRPC services.
+- Bridge AI/chat realtime updates to clients through SSE and WebSocket using Redis subscriptions.
 
 ## Architecture
-The service is a Spring Boot WebFlux + Spring Cloud Gateway application.
-
-- Routing layer:
-  - `application.yml` defines route predicates, path rewrites, and rate-limit filters for `/api/auth/**`, `/api/profile/**`, `/api/files/**`, `/api/chat/**`, `/api/rag/**`, and `/api/ai/**`.
-- Controller layer:
-  - Internal controllers under `controller/` expose `/api/internal/**` endpoints and call gRPC blocking stubs.
-- Security layer:
-  - `JwtGlobalFilter` enforces Bearer token checks for non-public routes.
-  - `JwtValidationService` validates issuer and signature using the public key.
-- Input protection:
-  - `PromptInjectionSanitizationFilter` runs on AI message/execution POST routes.
-- Realtime layer:
-  - `ChatWebSocketHandler` and `ChatWebSocketConfig` provide `/ws/chat`.
-  - `ChatRedisSubscriber` subscribes to Redis pub/sub channels and Redis streams for AI updates.
+- API layer: Spring WebFlux controllers under `controller/` mapped to `/api/internal/**`.
+- Edge policy layer: `JwtGlobalFilter`, security configuration, and prompt sanitization filter.
+- Integration layer: gRPC blocking stubs for Auth, Profile, File, Chat, RAG, and AI models.
+- Realtime layer: `ChatWebSocketHandler` and `ChatRedisSubscriber` for pub/sub and stream fan-out.
 
 ## API / gRPC Contracts
-### Exposed REST APIs
+### REST Endpoints
 - Auth:
   - `POST /api/auth/signup`
   - `POST /api/auth/login`
@@ -44,73 +33,171 @@ The service is a Spring Boot WebFlux + Spring Cloud Gateway application.
   - `PATCH /api/profile/visibility`
   - `POST /api/profile/reputation`
 - File:
-  - File/folder CRUD and sharing under `/api/files/**`
-  - Upload endpoints include multipart and base64 variants
+  - `POST /api/files` (multipart upload)
+  - `POST /api/files/base64-upload`
+  - `POST /api/files/folders`
+  - `PUT /api/files/folders/{folderId}`
+  - `DELETE /api/files/folders/{folderId}`
+  - `POST /api/files/folders/{folderId}/share`
+  - `DELETE /api/files/folders/{folderId}/share/{userId}`
+  - `GET /api/files/folders`
+  - `GET /api/files/folders/shared`
+  - `GET /api/files/{fileId}`
+  - `DELETE /api/files/{fileId}`
+  - `POST /api/files/{fileId}/share`
+  - `POST /api/files/{fileId}/unshare`
+  - `PATCH /api/files/{fileId}/metadata`
+  - `GET /api/files/my`
+  - `GET /api/files/shared-with-me`
+  - `GET /api/files/{fileId}/path`
+  - `GET /api/files/{fileId}/preview`
 - Chat:
   - `POST /api/chat/messages`
   - `GET /api/chat/chatrooms`
   - `GET /api/chat/chatrooms/{chatroomId}`
   - `GET /api/chat/chatrooms/{chatroomId}/messages`
   - `POST /api/chat/chatrooms/{chatroomId}/typing`
-  - `GET /api/chat/messages/{messageId}/stream` (SSE)
+  - `GET /api/chat/messages/{messageId}/stream`
   - `POST /api/chat/messages/{messageId}/cancel`
 - Direct AI execution:
   - `POST /api/ai/executions`
   - `GET /api/ai/executions/{executionId}`
   - `DELETE /api/ai/executions/{executionId}`
+  - `GET /api/ai/executions/{executionId}/stream`
+- AI model admin:
+  - `GET /api/ai/models`
+  - `POST /api/ai/models`
+  - `POST /api/ai/providers`
+  - `POST /api/ai/accounts`
+  - `GET /api/ai/providers`
+  - `GET /api/ai/accounts`
+- RAG:
+  - `POST /api/rag/ingest`
+  - `POST /api/rag/retrieve`
+  - `DELETE /api/rag/vectors/{fileId}`
+  - `POST /api/rag/cancel/{requestId}`
+  - `GET /api/rag/providers`
+  - `GET /api/rag/collection/info`
 
-### gRPC contracts consumed
-- `proto/auth.proto` via `AuthService`
-- `proto/profile.proto` via `UserProfileService`
-- `proto/file.proto` via `FileService`
-- `proto/chat.proto` via `ChatService`
-- `proto/rag.proto` via `RagService`
-- `proto/ai_models.proto` via `AiModelService`
-
-## Data Layer
-- Primary database: none (stateless gateway).
-- Redis usage:
-  - Request rate limiter state.
-  - Realtime pub/sub channels for chat and typing events.
-  - Redis streams for AI execution stream fan-out.
+### gRPC Contracts Consumed
+- `proto/auth.proto` (`AuthService`)
+- `proto/profile.proto` (`UserProfileService`)
+- `proto/file.proto` (`FileService`)
+- `proto/chat.proto` (`ChatService`)
+- `proto/rag.proto` (`RagService`)
+- `proto/ai_models.proto` (`AiModelService`)
 
 ## Communication
-- Inbound:
-  - HTTP/JSON REST from clients.
-  - WebSocket connections on `/ws/chat`.
-- Outbound (synchronous):
-  - gRPC calls to auth, user-profile, file, chat, and rag services.
-- Outbound (asynchronous consumption):
-  - Redis pub/sub and stream reads for realtime chat and AI stream delivery.
+- Inbound: HTTP/JSON, SSE, and WebSocket from browser/mobile clients.
+- Outbound synchronous: gRPC to all internal business services.
+- Outbound asynchronous: Redis pub/sub and Redis streams consumption for realtime event fan-out.
+
+## Data Layer
+### Database Overview
+The gateway is stateless and does not own a relational database. Redis is used for distributed operational state.
+
+### Entities
+- `rate_limit_bucket`: route/key token-bucket counters and timestamps.
+- `realtime_channel_event`: pub/sub event envelopes for chat, typing, and AI updates.
+- `ai_execution_stream_record`: ordered stream entries for direct AI execution updates.
+
+### Relationships
+- A `rate_limit_bucket` belongs to one route key and aggregates many request checks.
+- A `realtime_channel_event` belongs to one channel and can emit many payloads.
+- An `ai_execution_stream_record` belongs to one execution stream key and contains ordered fragments.
+
+### Database Diagram (MANDATORY)
+```mermaid
+erDiagram
+    RATE_LIMIT_BUCKET ||--o{ REQUEST_CHECK : throttles
+    REALTIME_CHANNEL ||--o{ REALTIME_CHANNEL_EVENT : carries
+    AI_EXECUTION_STREAM ||--o{ AI_EXECUTION_STREAM_RECORD : appends
+
+    RATE_LIMIT_BUCKET {
+        string route_key
+        int replenish_rate
+        int burst_capacity
+    }
+    REQUEST_CHECK {
+        datetime checked_at
+        bool allowed
+    }
+    REALTIME_CHANNEL {
+        string channel_name
+    }
+    REALTIME_CHANNEL_EVENT {
+        string event_type
+        string payload_json
+    }
+    AI_EXECUTION_STREAM {
+        string stream_key
+    }
+    AI_EXECUTION_STREAM_RECORD {
+        int sequence
+        string event_json
+    }
+```
 
 ## Key Workflows
-1. Auth request flow
-   - Client calls `/api/auth/*`.
-   - Gateway applies route-specific rate limiting and path rewrite to `/api/internal/auth/*`.
-   - Controller maps request to `AuthService` gRPC call.
-   - Response is normalized back to HTTP.
-2. AI execution flow
-   - Client calls `POST /api/ai/executions`.
-   - JWT and payload sanitization filters run.
-   - Gateway calls `RagService.ExecuteDirect` with user metadata.
-   - Client polls status or subscribes to SSE stream endpoint.
-3. Realtime chat flow
-   - Client sends message via `/api/chat/messages`.
-   - Gateway forwards to chat-service gRPC.
-   - Chat and AI events are consumed from Redis and emitted over SSE/WebSocket.
+1. Client authentication request: route rewrite -> rate-limit filter -> auth gRPC call -> normalized HTTP response.
+2. Chat send and stream: message POST -> chat gRPC -> Redis event subscription -> SSE/WebSocket push.
+3. Direct AI execution: execution POST -> RAG gRPC `ExecuteDirect` -> status/stream polling endpoints.
 
-## Diagram
+## Service Architecture Diagram (MANDATORY)
 ```mermaid
 graph TD
-    Client[Web or Mobile Client] --> REST[REST and WebSocket Endpoints]
-    REST --> Filters[JWT Filter, Rate Limiter, Prompt Sanitizer]
-    Filters --> Controllers[Gateway Controllers]
-    Controllers --> AuthGRPC[Auth gRPC]
-    Controllers --> ProfileGRPC[Profile gRPC]
-    Controllers --> FileGRPC[File gRPC]
-    Controllers --> ChatGRPC[Chat gRPC]
-    Controllers --> RagGRPC[RAG and AI Models gRPC]
-    Redis[(Redis)] --> Realtime[Redis Subscriber]
-    Realtime --> SSE[SSE and WebSocket Stream]
-    SSE --> Client
+    Client --> GatewayController
+    GatewayController --> SecurityFilters
+    SecurityFilters --> GrpcClients
+    SecurityFilters --> RateLimiter
+    GrpcClients --> AuthService
+    GrpcClients --> ProfileService
+    GrpcClients --> FileService
+    GrpcClients --> ChatService
+    GrpcClients --> RagService
+    Redis --> RealtimeSubscriber
+    RealtimeSubscriber --> SSEWebSocket
+    SSEWebSocket --> Client
 ```
+
+## Inter-Service Communication Diagram (MANDATORY)
+```mermaid
+graph LR
+    APIGateway -->|gRPC| AuthService
+    APIGateway -->|gRPC| UserProfileService
+    APIGateway -->|gRPC| FileService
+    APIGateway -->|gRPC| ChatService
+    APIGateway -->|gRPC| RagService
+    APIGateway -->|gRPC| AiModelService
+    Redis --> APIGateway
+```
+
+## Environment Variables
+| Name | Purpose | Required |
+| --- | --- | --- |
+| `SERVER_PORT` | HTTP port for gateway | No |
+| `SPRING_DATA_REDIS_HOST` | Redis host for rate limiter and realtime subscriptions | Yes |
+| `SPRING_DATA_REDIS_PORT` | Redis port | Yes |
+| `GRPC_AUTH_ADDRESS` | gRPC target for auth-service | Yes |
+| `GRPC_PROFILE_ADDRESS` | gRPC target for user-profile-service | Yes |
+| `GRPC_FILE_ADDRESS` | gRPC target for file-service | Yes |
+| `GRPC_CHAT_ADDRESS` | gRPC target for chat-service | Yes |
+| `GRPC_RAG_ADDRESS` | gRPC target for rag-service | Yes |
+| `APP_JWT_ISSUER` | Expected JWT issuer | Yes |
+| `APP_JWT_PUBLIC_KEY_LOCATION` | Public key path for JWT signature verification | Yes |
+| `APP_GRPC_AUTH_SERVICE_SECRET` | Shared secret metadata for auth-service | Yes |
+| `APP_GRPC_PROFILE_SERVICE_SECRET` | Shared secret metadata for user-profile-service | Yes |
+| `APP_GRPC_FILE_SERVICE_SECRET` | Shared secret metadata for file-service | Yes |
+| `APP_GRPC_CHAT_SERVICE_SECRET` | Shared secret metadata for chat-service | Yes |
+| `APP_GRPC_RAG_SERVICE_SECRET` | Shared secret metadata for rag-service | Yes |
+| `GATEWAY_ALLOWED_ORIGINS` | CORS allow-list for frontend domains | Yes |
+
+## Running the Service
+- Docker (recommended): `docker compose up api-gateway redis auth-service user-profile-service file-service chat-service rag-service`.
+- Local Maven: `mvn -f api-gateway/pom.xml spring-boot:run`.
+
+## Scaling & Reliability Considerations
+- Rate limiting is distributed through Redis, enabling horizontal gateway scaling.
+- Gateway remains stateless; scale replicas independently from downstream service scaling.
+- SSE/WebSocket workloads can be isolated by deploying dedicated gateway pods for realtime traffic.
+- Backpressure and timeout policies should be tuned per downstream gRPC dependency.
